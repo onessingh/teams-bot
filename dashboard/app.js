@@ -55,26 +55,36 @@ addBtn.addEventListener('click', () => {
 });
 
 // Listen to Queue
+let queueItemsData = [];
 onValue(ref(db, 'queue'), (snapshot) => {
     queueList.innerHTML = '';
+    queueItemsData = [];
     let hasItems = false;
     
     snapshot.forEach((childSnapshot) => {
         hasItems = true;
         const item = childSnapshot.val();
+        item.id = childSnapshot.key;
+        queueItemsData.push(item);
         
         let linkHtml = '';
         if (item.youtube_url) {
-            linkHtml = `<br><a href="${item.youtube_url}" target="_blank" class="queue-link">▶ Watch on YouTube</a>`;
+            linkHtml = `<br><a href="${item.youtube_url}" target="_blank" class="queue-link">▶️ Watch on YouTube</a>`;
+        }
+        
+        let statusText = item.status;
+        if (item.status === 'UPLOADING') {
+            statusText = `UPLOADING (${item.upload_progress || 0}%)`;
         }
         
         const html = `
             <li class="queue-item">
                 <div class="queue-item-header">
                     <span class="queue-title">${item.title}</span>
-                    <span class="queue-status ${item.status}">${item.status}</span>
+                    <span class="queue-status ${item.status}" id="status-${item.id}">${statusText}</span>
                 </div>
                 <div style="font-size: 12px; color: #606770;">Added: ${new Date(item.addedAt).toLocaleString()}</div>
+                <div id="elapsed-${item.id}" style="font-size: 13px; color: #e41e3f; font-weight: bold; margin-top: 6px;"></div>
                 ${linkHtml}
             </li>
         `;
@@ -85,6 +95,23 @@ onValue(ref(db, 'queue'), (snapshot) => {
         queueList.innerHTML = '<div class="empty-state">Queue is empty. Add a link above.</div>';
     }
 });
+
+// Update elapsed time every second for recording items
+setInterval(() => {
+    queueItemsData.forEach(item => {
+        const elapsedEl = document.getElementById(`elapsed-${item.id}`);
+        if (elapsedEl && item.status === 'RECORDING' && item.updatedAt) {
+            const diff = Date.now() - item.updatedAt;
+            const hours = Math.floor(diff / 3600000);
+            const mins = Math.floor((diff % 3600000) / 60000).toString().padStart(2, '0');
+            const secs = Math.floor((diff % 60000) / 1000).toString().padStart(2, '0');
+            elapsedEl.textContent = `⏱️ Elapsed: ${hours > 0 ? hours + ':' : ''}${mins}:${secs}`;
+        } else if (elapsedEl) {
+            elapsedEl.textContent = '';
+        }
+    });
+}, 1000);
+
 
 // Start Login Process
 startLoginBtn.addEventListener('click', async () => {
@@ -103,7 +130,6 @@ startLoginBtn.addEventListener('click', async () => {
     // Trigger Bot state
     await set(ref(db, 'state/login_status'), "REQUESTED");
     
-    // (In production, this would trigger the GH Action via PAT. For now we assume bot is running/polling)
     mfaStatusText.textContent = "Starting headless browser on GitHub Actions...";
 });
 
@@ -122,7 +148,7 @@ onValue(ref(db, 'state'), (snapshot) => {
             }, 2000);
         }
     } else if (state.login_status === "WAITING_FOR_MFA") {
-        mfaStatusText.textContent = "📱 Approve this request on your phone!";
+        mfaStatusText.textContent = "🔔 Approve this request on your phone!";
         if (state.mfa_screenshot) {
             mfaScreenshot.src = state.mfa_screenshot;
             mfaScreenshot.style.display = 'block';

@@ -85,8 +85,10 @@ async function processItem(item) {
     await ref.update({ status: 'RECORDING', updatedAt: Date.now() });
     await recordClass(item.url, outputPath, cookies, { maxMs: MAX_MS });
 
-    await ref.update({ status: 'UPLOADING', updatedAt: Date.now() });
-    const youtubeUrl = await uploadToYouTube(outputPath, item.title || safeName);
+    await ref.update({ status: 'UPLOADING', upload_progress: 0, updatedAt: Date.now() });
+    const youtubeUrl = await uploadToYouTube(outputPath, item.title || safeName, async (pct) => {
+        await ref.update({ upload_progress: pct, updatedAt: Date.now() });
+    });
 
     await ref.update({
       status: 'COMPLETED',

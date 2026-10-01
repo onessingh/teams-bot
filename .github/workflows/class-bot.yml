@@ -39,7 +39,7 @@ jobs:
           echo "PULSE_CAPTURE_SOURCE=teams_sink.monitor" >> "$GITHUB_ENV"
           echo "RECORDING_SIZE=1280x720" >> "$GITHUB_ENV"
           echo "RECORDING_FPS=15" >> "$GITHUB_ENV"
-          echo "MAX_RECORDING_MS=7200000" >> "$GITHUB_ENV"
+          echo "MAX_RECORDING_MS=18000000" >> "$GITHUB_ENV"
           sleep 3
 
       - name: Run bot

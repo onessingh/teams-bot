@@ -1,7 +1,7 @@
 const { google } = require('googleapis');
 const fs = require('fs');
 
-async function uploadToYouTube(videoPath, title) {
+async function uploadToYouTube(videoPath, title, onProgress) {
     const oauth2Client = new google.auth.OAuth2(
         process.env.YOUTUBE_CLIENT_ID,
         process.env.YOUTUBE_CLIENT_SECRET
@@ -24,6 +24,7 @@ async function uploadToYouTube(videoPath, title) {
         onUploadProgress: evt => {
             const progress = (evt.bytesRead / fileSize) * 100;
             console.log(`${Math.round(progress)}% uploaded...`);
+            if (onProgress) onProgress(Math.round(progress));
         }
     });
 
