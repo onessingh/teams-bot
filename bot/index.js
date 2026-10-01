@@ -52,14 +52,15 @@ async function claimNextWaiting() {
   if (!selected) return null;
 
   const itemRef = db.ref(`queue/${selected.id}`);
-  let claimed = false;
-  await itemRef.transaction(current => {
-    if (!current || current.status !== 'WAITING') return;
-    claimed = true;
-    return { ...current, status: 'STARTING', startedAt: Date.now(), error: null };
-  });
+  const currentSnap = await itemRef.once('value');
+  const current = currentSnap.val();
+  
+  if (current && current.status === 'WAITING') {
+    await itemRef.update({ status: 'STARTING', startedAt: Date.now(), error: null });
+    return selected;
+  }
 
-  return claimed ? selected : null;
+  return null;
 }
 
 async function getCookies() {
