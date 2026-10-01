@@ -174,15 +174,48 @@ async function recordClass(url, outputPath, cookies, options = {}) {
       throw new Error('Could not start Teams playback. Check the recording URL and saved Teams session.');
     }
 
-    // Start capture only after playback has been requested/confirmed.
-    ffmpeg = await startRecorder(outputPath, maxMs);
+    const resumeTime = options.resumeTime || 0;
+    if (resumeTime > 0) {
+      console.log(`⏩ Forwarding video to ${resumeTime} seconds...`);
+      await page.evaluate((sec) => {
+        const v = Array.from(document.querySelectorAll('video')).find(x => x.readyState >= 2) || document.querySelector('video');
+        if (v) v.currentTime = sec;
+      }, resumeTime);
+      await sleep(8000); // Wait for buffer after seek
+    }
+
+    // Refetch duration to determine if we need to chunk
+    const actualDuration = await page.evaluate(() => {
+      const v = Array.from(document.querySelectorAll('video')).find(x => x.readyState >= 2) || document.querySelector('video');
+      return v ? v.duration : 0;
+    });
+
+    const CHUNK_LIMIT_MS = 14400 * 1000; // 4 hours in ms
+    let timeLeftMs = maxMs; 
+    if (actualDuration > 0) {
+      timeLeftMs = Math.max(0, (actualDuration - resumeTime) * 1000);
+    }
+    
+    let recordMs = maxMs;
+    let wasSplit = false;
+    
+    if (timeLeftMs > CHUNK_LIMIT_MS) {
+      recordMs = CHUNK_LIMIT_MS;
+      wasSplit = true;
+      console.log(`✂️ Video has ${(timeLeftMs/3600000).toFixed(1)}h left. Chunking to 4 hours.`);
+    } else {
+      recordMs = Math.min(timeLeftMs, maxMs);
+    }
+
+    // Start capture
+    ffmpeg = await startRecorder(outputPath, recordMs);
 
     console.log('⏺️ Recording in progress...');
     await sleep(5000); // Wait a bit for playback to stabilize
 
     // Smart monitoring loop instead of a blind sleep
     const startTime = Date.now();
-    while (Date.now() - startTime < maxMs) {
+    while (Date.now() - startTime < recordMs) {
       await sleep(10000); // check every 10 seconds
       
       try {
@@ -196,6 +229,7 @@ async function recordClass(url, outputPath, cookies, options = {}) {
         
         if (isEnded) {
           console.log('✅ Video playback has finished naturally. Stopping recording early.');
+          wasSplit = false; // Finished naturally, no next part needed
           break;
         }
       } catch (err) {
@@ -211,7 +245,7 @@ async function recordClass(url, outputPath, cookies, options = {}) {
     }
 
     console.log(`✅ Recording saved: ${outputPath} (${fs.statSync(outputPath).size} bytes)`);
-    return outputPath;
+    return { outputPath, wasSplit, durationRecordedMs: recordMs };
   } finally {
     if (ffmpeg) await stopRecorder(ffmpeg).catch(() => {});
     if (browser) await browser.close().catch(() => {});

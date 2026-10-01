@@ -83,10 +83,13 @@ async function processItem(item) {
     const cookies = await getCookies();
 
     await ref.update({ status: 'RECORDING', updatedAt: Date.now() });
-    await recordClass(item.url, outputPath, cookies, { maxMs: item.maxMs || MAX_MS });
+    const result = await recordClass(item.url, outputPath, cookies, { 
+      maxMs: item.maxMs || MAX_MS,
+      resumeTime: item.resumeTime || 0
+    });
 
     await ref.update({ status: 'UPLOADING', upload_progress: 0, updatedAt: Date.now() });
-    const youtubeUrl = await uploadToYouTube(outputPath, item.title || safeName, async (pct) => {
+    const youtubeUrl = await uploadToYouTube(result.outputPath, item.title || safeName, async (pct) => {
         await ref.update({ upload_progress: pct, updatedAt: Date.now() });
     });
 
@@ -98,6 +101,24 @@ async function processItem(item) {
       error: null
     });
     console.log(`✅ ${item.title} uploaded: ${youtubeUrl}`);
+
+    if (result.wasSplit) {
+      const nextPartNum = (item.part || 1) + 1;
+      const baseTitle = (item.title || safeName).replace(/ \(Part \d+\)$/, '');
+      const newTitle = `${baseTitle} (Part ${nextPartNum})`;
+      const newResumeTime = (item.resumeTime || 0) + Math.floor(result.durationRecordedMs / 1000);
+      
+      await db.ref('queue').push({
+        url: item.url,
+        title: newTitle,
+        status: 'WAITING',
+        addedAt: Date.now(),
+        maxMs: item.maxMs || MAX_MS,
+        resumeTime: newResumeTime,
+        part: nextPartNum
+      });
+      console.log(`📝 Queued next part: ${newTitle} starting at ${newResumeTime}s`);
+    }
   } catch (error) {
     console.error(`❌ ${item.title} failed:`, error);
     const message = String(error?.message || error).slice(0, 1000);
