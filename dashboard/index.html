@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teams Class Bot</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; color: #1c1e21; }
+        .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { font-size: 20px; margin-top: 0; display: flex; justify-content: space-between; align-items: center; }
+        .status-badge { font-size: 12px; padding: 4px 8px; border-radius: 12px; background: #e4e6eb; font-weight: normal; }
+        .status-badge.connected { background: #e7f3eb; color: #1877f2; }
+        .input-group { display: flex; gap: 10px; margin-bottom: 20px; }
+        input[type="text"], input[type="password"] { flex: 1; padding: 12px; border: 1px solid #ccd0d5; border-radius: 8px; font-size: 16px; outline: none; }
+        button { padding: 12px 20px; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+        .btn-primary { background: #1877f2; color: white; }
+        .btn-primary:active { background: #166fe5; }
+        .btn-danger { background: #e41e3f; color: white; margin-top: 10px; width: 100%; }
+        .btn-settings { background: #42b72a; color: white; padding: 6px 12px; font-size: 14px; }
+        .queue-list { list-style: none; padding: 0; margin: 0; }
+        .queue-item { padding: 15px; border: 1px solid #e4e6eb; border-radius: 8px; margin-bottom: 10px; }
+        .queue-item-header { display: flex; justify-content: space-between; margin-bottom: 5px; }
+        .queue-title { font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%; }
+        .queue-status { font-size: 14px; color: #606770; font-weight: bold; }
+        .queue-status.RECORDING { color: #e41e3f; }
+        .queue-status.COMPLETED { color: #42b72a; }
+        .queue-link { font-size: 12px; color: #1877f2; word-break: break-all; }
+        .empty-state { text-align: center; color: #606770; padding: 30px 0; }
+        
+        /* Modal Styles */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); z-index: 1000; align-items: center; justify-content: center; }
+        .modal { background: white; padding: 20px; border-radius: 12px; width: 90%; max-width: 400px; }
+        .modal h2 { margin-top: 0; font-size: 18px; }
+        .modal label { display: block; margin: 10px 0 5px; font-size: 14px; font-weight: bold; }
+        .modal input { width: 100%; box-sizing: border-box; margin-bottom: 15px; }
+        
+        /* MFA Styles */
+        #mfa-section { display: none; text-align: center; margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee; }
+        #mfa-screenshot { max-width: 100%; border-radius: 8px; margin: 10px 0; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        .mfa-text { font-size: 14px; color: #e41e3f; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>
+            🎓 Class Bot
+            <div>
+                <span class="status-badge" id="teams-status">Teams: 🔴 Expired</span>
+                <button class="btn-settings" id="settings-btn">Login Teams</button>
+            </div>
+        </h1>
+        
+        <div class="input-group">
+            <input type="text" id="teams-link" placeholder="Paste Teams recording link here...">
+            <button class="btn-primary" id="add-btn">Add</button>
+        </div>
+
+        <ul class="queue-list" id="queue-list">
+            <div class="empty-state">Queue is empty. Add a link above.</div>
+        </ul>
+    </div>
+
+    <!-- Login Modal -->
+    <div class="modal-overlay" id="login-modal">
+        <div class="modal">
+            <h2>🔑 Microsoft Teams Login</h2>
+            <p style="font-size: 13px; color: #606770;">Bot will securely use these to login and save cookies automatically.</p>
+            
+            <label>College Email</label>
+            <input type="text" id="ms-email" placeholder="student@college.edu">
+            
+            <label>Password</label>
+            <input type="password" id="ms-password" placeholder="••••••••">
+            
+            <button class="btn-primary" style="width: 100%;" id="start-login-btn">Start Auto Login</button>
+            <button class="btn-danger" id="close-modal-btn" style="background: #e4e6eb; color: black;">Cancel</button>
+
+            <div id="mfa-section">
+                <div class="mfa-text" id="mfa-status-text">Starting browser...</div>
+                <img id="mfa-screenshot" src="" alt="MFA Screen" style="display:none;">
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="app.js"></script>
+</body>
+</html>
