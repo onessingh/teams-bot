@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getDatabase, ref, push, onValue, set } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+import { getDatabase, ref, push, onValue, set, remove } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyDfUN-6PfOIQJnUbiXnQTcbyG9OS_lU4u0",
@@ -59,6 +59,17 @@ addBtn.addEventListener('click', () => {
     }
 });
 
+// Handle Delete clicks
+queueList.addEventListener('click', (e) => {
+    if (e.target.closest('.delete-btn')) {
+        const btn = e.target.closest('.delete-btn');
+        const id = btn.getAttribute('data-id');
+        if (confirm("Are you sure you want to delete this class?")) {
+            remove(ref(db, `queue/${id}`));
+        }
+    }
+});
+
 // Helper for status colors
 function getStatusColor(status) {
     if(status === 'COMPLETED') return 'text-green-600';
@@ -94,14 +105,22 @@ onValue(ref(db, 'queue'), (snapshot) => {
         const statusColor = getStatusColor(item.status);
         
         const html = `
-            <li class="queue-item bg-white p-4 border border-gray-100 rounded-xl shadow-sm">
-                <div class="flex justify-between items-start mb-1">
+            <li class="queue-item bg-white p-4 border border-gray-100 rounded-xl shadow-sm relative group">
+                <button class="delete-btn absolute top-3 right-3 text-gray-300 hover:text-red-500 transition-colors p-1" data-id="${item.id}" title="Delete this item">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                      <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
+                      <path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
+                    </svg>
+                </button>
+                <div class="flex justify-between items-start mb-1 pr-8">
                     <span class="font-bold text-sm text-gray-800 truncate pr-2" title="${item.title}">${item.title}</span>
+                </div>
+                <div class="mb-1">
                     <span class="text-[11px] font-black uppercase tracking-wider ${statusColor} shrink-0" id="status-${item.id}">${statusText}</span>
                 </div>
-                <div class="text-[11px] text-gray-500 flex justify-between items-center">
+                <div class="text-[11px] text-gray-500 flex justify-between items-center pr-8">
                     <span>Added: ${new Date(item.addedAt).toLocaleString()}</span>
-                    ${item.maxMs ? `<span>⏳ ${(item.maxMs/60000).toFixed(0)}m limit</span>` : ''}
+                    ${item.maxMs ? `<span class="bg-gray-100 px-2 py-0.5 rounded text-gray-600">⏳ ${(item.maxMs/60000).toFixed(0)}m limit</span>` : ''}
                 </div>
                 <div id="elapsed-${item.id}" class="text-xs font-bold text-red-600 mt-2 empty:hidden"></div>
                 ${linkHtml}
