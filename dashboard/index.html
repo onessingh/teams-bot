@@ -4,81 +4,93 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Teams Class Bot</title>
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; color: #1c1e21; }
-        .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        h1 { font-size: 20px; margin-top: 0; display: flex; justify-content: space-between; align-items: center; }
-        .status-badge { font-size: 12px; padding: 4px 8px; border-radius: 12px; background: #e4e6eb; font-weight: normal; }
-        .status-badge.connected { background: #e7f3eb; color: #1877f2; }
-        .input-group { display: flex; gap: 10px; margin-bottom: 20px; }
-        input[type="text"], input[type="password"] { flex: 1; padding: 12px; border: 1px solid #ccd0d5; border-radius: 8px; font-size: 16px; outline: none; }
-        button { padding: 12px 20px; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
-        .btn-primary { background: #1877f2; color: white; }
-        .btn-primary:active { background: #166fe5; }
-        .btn-danger { background: #e41e3f; color: white; margin-top: 10px; width: 100%; }
-        .btn-settings { background: #42b72a; color: white; padding: 6px 12px; font-size: 14px; }
-        .queue-list { list-style: none; padding: 0; margin: 0; }
-        .queue-item { padding: 15px; border: 1px solid #e4e6eb; border-radius: 8px; margin-bottom: 10px; }
-        .queue-item-header { display: flex; justify-content: space-between; margin-bottom: 5px; }
-        .queue-title { font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%; }
-        .queue-status { font-size: 14px; color: #606770; font-weight: bold; }
-        .queue-status.RECORDING { color: #e41e3f; }
-        .queue-status.COMPLETED { color: #42b72a; }
-        .queue-status.UPLOADING { color: #f59e0b; }
-        .queue-link { font-size: 12px; color: #1877f2; word-break: break-all; }
-        .empty-state { text-align: center; color: #606770; padding: 30px 0; }
-        
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f0f2f5; }
+        .queue-item { transition: all 0.2s ease-in-out; }
+        .queue-item:hover { transform: translateY(-1px); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
         /* Modal Styles */
-        .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); z-index: 1000; align-items: center; justify-content: center; }
-        .modal { background: white; padding: 20px; border-radius: 12px; width: 90%; max-width: 400px; }
-        .modal h2 { margin-top: 0; font-size: 18px; }
-        .modal label { display: block; margin: 10px 0 5px; font-size: 14px; font-weight: bold; }
-        .modal input { width: 100%; box-sizing: border-box; margin-bottom: 15px; }
-        
-        /* MFA Styles */
-        #mfa-section { display: none; text-align: center; margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee; }
-        #mfa-screenshot { max-width: 100%; border-radius: 8px; margin: 10px 0; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
-        .mfa-text { font-size: 14px; color: #e41e3f; font-weight: bold; }
+        .modal-overlay { display: none; }
+        .modal-overlay.active { display: flex; }
     </style>
 </head>
-<body>
-    <div class="container">
-        <h1>
-            🎓 Class Bot
-            <div>
-                <span class="status-badge" id="teams-status">Teams: 🔴 Expired</span>
-                <button class="btn-settings" id="settings-btn">Login Teams</button>
-            </div>
-        </h1>
+<body class="text-gray-800 p-3 md:p-6">
+    <div class="max-w-xl mx-auto bg-white rounded-xl shadow-sm p-4 md:p-6 border border-gray-100">
         
-        <div class="input-group">
-            <input type="text" id="teams-link" placeholder="Paste Teams recording link here...">
-            <button class="btn-primary" id="add-btn">Add</button>
+        <!-- Header Section -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 pb-4 border-b border-gray-100">
+            <h1 class="text-xl font-bold flex items-center gap-2">
+                🎓 <span class="tracking-tight">Class Bot</span>
+            </h1>
+            <div class="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
+                <span id="teams-status" class="px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-600 border border-gray-200">
+                    Teams: ❌ Expired
+                </span>
+                <button id="settings-btn" class="bg-green-600 hover:bg-green-700 text-white px-4 py-1.5 rounded-lg text-sm font-medium transition-colors shadow-sm">
+                    Login Teams
+                </button>
+            </div>
+        </div>
+        
+        <!-- Input Section -->
+        <div class="flex flex-col gap-3 mb-6 bg-gray-50 p-4 rounded-xl border border-gray-100">
+            <input type="text" id="teams-link" placeholder="Paste Teams recording link here..." 
+                class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm">
+            
+            <div class="flex gap-2">
+                <div class="flex-1 relative">
+                    <input type="number" id="teams-duration" placeholder="Duration" value="300"
+                        class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm">
+                    <span class="absolute right-3 top-3 text-xs text-gray-400 pointer-events-none mt-0.5">mins</span>
+                </div>
+                <button id="add-btn" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg text-sm font-bold transition-colors shadow-sm">
+                    Add to Queue
+                </button>
+            </div>
+            <p class="text-[11px] text-gray-500 text-center mt-1">Hint: Change duration to 5 for a quick 5-min test!</p>
         </div>
 
-        <ul class="queue-list" id="queue-list">
-            <div class="empty-state">Queue is empty. Add a link above.</div>
-        </ul>
+        <!-- Queue Section -->
+        <div>
+            <h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Processing Queue</h2>
+            <ul id="queue-list" class="flex flex-col gap-3">
+                <div class="text-center text-gray-400 py-8 text-sm">Queue is empty. Add a link above.</div>
+            </ul>
+        </div>
     </div>
 
     <!-- Login Modal -->
-    <div class="modal-overlay" id="login-modal">
-        <div class="modal">
-            <h2>🔑 Microsoft Teams Login</h2>
-            <p style="font-size: 13px; color: #606770;">Bot will securely use these to login and save cookies automatically.</p>
+    <div id="login-modal" class="modal-overlay fixed inset-0 bg-black/60 z-50 items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-white p-6 rounded-2xl w-full max-w-sm shadow-xl transform transition-all">
+            <h2 class="text-xl font-bold mb-1">Microsoft Teams</h2>
+            <p class="text-xs text-gray-500 mb-5">Securely save cookies for automated recording.</p>
             
-            <label>College Email</label>
-            <input type="text" id="ms-email" placeholder="student@college.edu">
-            
-            <label>Password</label>
-            <input type="password" id="ms-password" placeholder="••••••••">
-            
-            <button class="btn-primary" style="width: 100%;" id="start-login-btn">Start Auto Login</button>
-            <button class="btn-danger" id="close-modal-btn" style="background: #e4e6eb; color: black;">Cancel</button>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-gray-700 mb-1">College Email</label>
+                    <input type="text" id="ms-email" placeholder="student@college.edu" 
+                        class="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+                </div>
+                
+                <div>
+                    <label class="block text-xs font-bold text-gray-700 mb-1">Password</label>
+                    <input type="password" id="ms-password" placeholder="••••••••" 
+                        class="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+                </div>
+                
+                <div class="pt-2 flex flex-col gap-2">
+                    <button id="start-login-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg text-sm font-bold transition-colors shadow-sm">
+                        Start Auto Login
+                    </button>
+                    <button id="close-modal-btn" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 py-2.5 rounded-lg text-sm font-bold transition-colors">
+                        Cancel
+                    </button>
+                </div>
+            </div>
 
-            <div id="mfa-section">
-                <div class="mfa-text" id="mfa-status-text">Starting browser...</div>
-                <img id="mfa-screenshot" src="" alt="MFA Screen" style="display:none;">
+            <div id="mfa-section" class="hidden mt-6 pt-5 border-t border-gray-100 text-center">
+                <div id="mfa-status-text" class="text-sm font-bold text-blue-600 mb-3 animate-pulse">Starting browser...</div>
+                <img id="mfa-screenshot" src="" alt="MFA Screen" class="hidden w-full rounded-lg shadow-md border border-gray-200">
             </div>
         </div>
     </div>

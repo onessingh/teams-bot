@@ -16,6 +16,7 @@ const db = getDatabase(app);
 
 const addBtn = document.getElementById('add-btn');
 const linkInput = document.getElementById('teams-link');
+const durationInput = document.getElementById('teams-duration');
 const queueList = document.getElementById('queue-list');
 const teamsStatus = document.getElementById('teams-status');
 
@@ -32,27 +33,40 @@ const mfaScreenshot = document.getElementById('mfa-screenshot');
 
 // Modal logic
 settingsBtn.addEventListener('click', () => {
-    loginModal.style.display = 'flex';
+    loginModal.classList.add('active');
 });
 
 closeModalBtn.addEventListener('click', () => {
-    loginModal.style.display = 'none';
-    mfaSection.style.display = 'none';
+    loginModal.classList.remove('active');
+    mfaSection.classList.add('hidden');
 });
 
 // Add link to queue
 addBtn.addEventListener('click', () => {
     const url = linkInput.value.trim();
+    const durationMins = parseInt(durationInput.value) || 300; // default 5 hours
+    const maxMs = durationMins * 60 * 1000;
+    
     if(url) {
         push(ref(db, 'queue'), {
             title: "Class " + new Date().toLocaleString(),
             url: url,
             status: 'WAITING',
+            maxMs: maxMs,
             addedAt: Date.now()
         });
         linkInput.value = '';
     }
 });
+
+// Helper for status colors
+function getStatusColor(status) {
+    if(status === 'COMPLETED') return 'text-green-600';
+    if(status === 'RECORDING') return 'text-red-600 animate-pulse';
+    if(status === 'UPLOADING') return 'text-amber-500';
+    if(status === 'FAILED') return 'text-red-600';
+    return 'text-blue-600';
+}
 
 // Listen to Queue
 let queueItemsData = [];
@@ -69,7 +83,7 @@ onValue(ref(db, 'queue'), (snapshot) => {
         
         let linkHtml = '';
         if (item.youtube_url) {
-            linkHtml = `<br><a href="${item.youtube_url}" target="_blank" class="queue-link">▶️ Watch on YouTube</a>`;
+            linkHtml = `<a href="${item.youtube_url}" target="_blank" class="mt-2 inline-flex items-center text-xs font-bold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-md transition-colors">▶️ Watch on YouTube</a>`;
         }
         
         let statusText = item.status;
@@ -77,14 +91,19 @@ onValue(ref(db, 'queue'), (snapshot) => {
             statusText = `UPLOADING (${item.upload_progress || 0}%)`;
         }
         
+        const statusColor = getStatusColor(item.status);
+        
         const html = `
-            <li class="queue-item">
-                <div class="queue-item-header">
-                    <span class="queue-title">${item.title}</span>
-                    <span class="queue-status ${item.status}" id="status-${item.id}">${statusText}</span>
+            <li class="queue-item bg-white p-4 border border-gray-100 rounded-xl shadow-sm">
+                <div class="flex justify-between items-start mb-1">
+                    <span class="font-bold text-sm text-gray-800 truncate pr-2" title="${item.title}">${item.title}</span>
+                    <span class="text-[11px] font-black uppercase tracking-wider ${statusColor} shrink-0" id="status-${item.id}">${statusText}</span>
                 </div>
-                <div style="font-size: 12px; color: #606770;">Added: ${new Date(item.addedAt).toLocaleString()}</div>
-                <div id="elapsed-${item.id}" style="font-size: 13px; color: #e41e3f; font-weight: bold; margin-top: 6px;"></div>
+                <div class="text-[11px] text-gray-500 flex justify-between items-center">
+                    <span>Added: ${new Date(item.addedAt).toLocaleString()}</span>
+                    ${item.maxMs ? `<span>⏳ ${(item.maxMs/60000).toFixed(0)}m limit</span>` : ''}
+                </div>
+                <div id="elapsed-${item.id}" class="text-xs font-bold text-red-600 mt-2 empty:hidden"></div>
                 ${linkHtml}
             </li>
         `;
@@ -92,7 +111,7 @@ onValue(ref(db, 'queue'), (snapshot) => {
     });
     
     if (!hasItems) {
-        queueList.innerHTML = '<div class="empty-state">Queue is empty. Add a link above.</div>';
+        queueList.innerHTML = '<div class="text-center text-gray-400 py-8 text-sm">Queue is empty. Add a link above.</div>';
     }
 });
 
@@ -112,7 +131,6 @@ setInterval(() => {
     });
 }, 1000);
 
-
 // Start Login Process
 startLoginBtn.addEventListener('click', async () => {
     const email = msEmail.value.trim();
@@ -120,9 +138,10 @@ startLoginBtn.addEventListener('click', async () => {
     
     if(!email || !password) return alert("Enter both email and password!");
     
-    mfaSection.style.display = 'block';
-    mfaScreenshot.style.display = 'none';
+    mfaSection.classList.remove('hidden');
+    mfaScreenshot.classList.add('hidden');
     mfaStatusText.textContent = "Sending credentials securely...";
+    mfaStatusText.className = "text-sm font-bold text-blue-600 mb-3 animate-pulse";
     
     // Save creds
     await set(ref(db, 'config/teams_creds'), { email, password });
@@ -139,21 +158,24 @@ onValue(ref(db, 'state'), (snapshot) => {
     if(!state) return;
     
     if (state.login_status === "SUCCESS") {
-        teamsStatus.textContent = "Teams: 🟢 Connected";
-        teamsStatus.classList.add('connected');
-        if(loginModal.style.display === 'flex') {
+        teamsStatus.innerHTML = "Teams: <span class='text-green-500'>🟢 Connected</span>";
+        teamsStatus.className = "px-3 py-1 rounded-full text-xs font-bold bg-green-50 border border-green-200 text-green-700";
+        if(loginModal.classList.contains('active')) {
             mfaStatusText.textContent = "✅ Login Successful! Cookies saved.";
+            mfaStatusText.className = "text-sm font-bold text-green-600 mb-3";
             setTimeout(() => {
-                loginModal.style.display = 'none';
+                loginModal.classList.remove('active');
             }, 2000);
         }
     } else if (state.login_status === "WAITING_FOR_MFA") {
         mfaStatusText.textContent = "🔔 Approve this request on your phone!";
+        mfaStatusText.className = "text-sm font-bold text-red-600 mb-3";
         if (state.mfa_screenshot) {
             mfaScreenshot.src = state.mfa_screenshot;
-            mfaScreenshot.style.display = 'block';
+            mfaScreenshot.classList.remove('hidden');
         }
     } else if (state.login_status === "FAILED") {
         mfaStatusText.textContent = "❌ Login Failed. Check credentials.";
+        mfaStatusText.className = "text-sm font-bold text-red-600 mb-3";
     }
 });
