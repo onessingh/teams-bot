@@ -106,13 +106,10 @@ onValue(ref(db, 'queue'), (snapshot) => {
         
         const html = `
             <li class="queue-item bg-white p-4 border border-gray-100 rounded-xl shadow-sm relative group">
-                <button class="delete-btn absolute top-3 right-3 text-gray-300 hover:text-red-500 transition-colors p-1" data-id="${item.id}" title="Delete this item">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                      <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
-                      <path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
-                    </svg>
+                <button class="delete-btn absolute top-3 right-3 text-red-600 font-bold bg-red-50 hover:bg-red-100 px-3 py-1 rounded-lg text-[10px] uppercase tracking-wider border border-red-200 transition-colors" data-id="${item.id}" title="Delete this item">
+                    ❌ Delete
                 </button>
-                <div class="flex justify-between items-start mb-1 pr-8">
+                <div class="flex justify-between items-start mb-1 pr-16">
                     <span class="font-bold text-sm text-gray-800 truncate pr-2" title="${item.title}">${item.title}</span>
                 </div>
                 <div class="mb-1">
