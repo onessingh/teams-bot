@@ -127,8 +127,14 @@ async function workerLoop() {
   }
 }
 
-db.ref('state/login_status').on('value', () => workerLoop().catch(console.error));
-db.ref('queue').on('value', () => workerLoop().catch(console.error));
+async function start() {
+  console.log("Starting worker loop...");
+  await workerLoop();
+  console.log("Queue is empty. Exiting gracefully to save runner minutes.");
+  process.exit(0);
+}
 
-// Keep the process alive even when the Firebase event stream is quiet.
-setInterval(() => workerLoop().catch(console.error), 15000);
+start().catch(error => {
+  console.error("Fatal error in worker:", error);
+  process.exit(1);
+});

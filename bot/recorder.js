@@ -178,7 +178,30 @@ async function recordClass(url, outputPath, cookies, options = {}) {
     ffmpeg = await startRecorder(outputPath, maxMs);
 
     console.log('⏺️ Recording in progress...');
-    await sleep(maxMs);
+    await sleep(5000); // Wait a bit for playback to stabilize
+
+    // Smart monitoring loop instead of a blind sleep
+    const startTime = Date.now();
+    while (Date.now() - startTime < maxMs) {
+      await sleep(10000); // check every 10 seconds
+      
+      try {
+        const isEnded = await page.evaluate(() => {
+          const videos = Array.from(document.querySelectorAll('video'));
+          const v = videos.find(x => x.currentTime > 0) || videos[0];
+          if (!v) return false;
+          // Video is considered ended if it hit the 'ended' state, or it's paused near the end
+          return v.ended || (v.paused && v.currentTime > 0 && Math.abs(v.duration - v.currentTime) < 2);
+        });
+        
+        if (isEnded) {
+          console.log('✅ Video playback has finished naturally. Stopping recording early.');
+          break;
+        }
+      } catch (err) {
+        // Ignore evaluation errors
+      }
+    }
 
     await stopRecorder(ffmpeg);
     ffmpeg = null;
