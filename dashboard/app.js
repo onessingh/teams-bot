@@ -195,3 +195,107 @@ onValue(ref(db, 'state'), (snapshot) => {
         mfaStatusText.className = "text-sm font-bold text-red-600 mb-3";
     }
 });
+
+// GitHub Trigger Logic
+const triggerGhBtn = document.getElementById('trigger-gh-btn');
+const ghModal = document.getElementById('gh-modal');
+const closeGhModalBtn = document.getElementById('close-gh-modal-btn');
+const saveGhBtn = document.getElementById('save-gh-btn');
+const clearGhBtn = document.getElementById('clear-gh-btn');
+const ghTokenInput = document.getElementById('gh-token-input');
+const ghStatusText = document.getElementById('gh-status-text');
+
+function getGhToken() {
+    return localStorage.getItem('teams_gh_pat');
+}
+
+triggerGhBtn.addEventListener('click', () => {
+    const token = getGhToken();
+    if (!token) {
+        ghModal.classList.add('active');
+        clearGhBtn.classList.add('hidden');
+    } else {
+        triggerGitHubAction(token);
+    }
+});
+
+closeGhModalBtn.addEventListener('click', () => {
+    ghModal.classList.remove('active');
+    ghStatusText.textContent = '';
+});
+
+saveGhBtn.addEventListener('click', () => {
+    const token = ghTokenInput.value.trim();
+    if (!token) {
+        ghStatusText.textContent = "Please enter a valid token.";
+        ghStatusText.className = "text-sm font-bold text-red-600 mt-4 text-center";
+        return;
+    }
+    localStorage.setItem('teams_gh_pat', token);
+    ghStatusText.textContent = "Token saved! Starting bot...";
+    ghStatusText.className = "text-sm font-bold text-green-600 mt-4 text-center";
+    triggerGitHubAction(token);
+});
+
+clearGhBtn.addEventListener('click', () => {
+    localStorage.removeItem('teams_gh_pat');
+    ghTokenInput.value = '';
+    clearGhBtn.classList.add('hidden');
+    ghStatusText.textContent = "Token deleted from this phone.";
+    ghStatusText.className = "text-sm font-bold text-amber-500 mt-4 text-center";
+});
+
+// Optionally let them open modal even if token exists by long-pressing
+let pressTimer;
+triggerGhBtn.addEventListener('touchstart', () => {
+    pressTimer = window.setTimeout(() => {
+        ghTokenInput.value = getGhToken() || '';
+        if(getGhToken()) clearGhBtn.classList.remove('hidden');
+        ghModal.classList.add('active');
+    }, 1000);
+});
+triggerGhBtn.addEventListener('touchend', () => clearTimeout(pressTimer));
+
+async function triggerGitHubAction(token) {
+    const originalText = triggerGhBtn.innerHTML;
+    triggerGhBtn.innerHTML = "⏳ Starting...";
+    triggerGhBtn.disabled = true;
+    
+    try {
+        const response = await fetch('https://api.github.com/repos/onessingh/teams-bot/actions/workflows/class-bot.yml/dispatches', {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/vnd.github+json',
+                'Authorization': `Bearer ${token}`,
+                'X-GitHub-Api-Version': '2022-11-28'
+            },
+            body: JSON.stringify({ ref: 'main' })
+        });
+
+        if (response.ok) {
+            triggerGhBtn.innerHTML = "✅ Bot Started!";
+            triggerGhBtn.classList.replace('bg-indigo-600', 'bg-green-600');
+            setTimeout(() => {
+                ghModal.classList.remove('active');
+            }, 1000);
+        } else {
+            const errData = await response.json();
+            throw new Error(errData.message || 'Unknown error');
+        }
+    } catch (error) {
+        if (error.message.includes('Bad credentials')) {
+            alert("Token is invalid or expired. Please enter a new one.");
+            localStorage.removeItem('teams_gh_pat');
+            ghModal.classList.add('active');
+        } else {
+            alert("Failed to start bot: " + error.message);
+        }
+        triggerGhBtn.innerHTML = originalText;
+    } finally {
+        setTimeout(() => {
+            triggerGhBtn.innerHTML = originalText;
+            triggerGhBtn.classList.replace('bg-green-600', 'bg-indigo-600');
+            triggerGhBtn.disabled = false;
+        }, 3000);
+    }
+}
