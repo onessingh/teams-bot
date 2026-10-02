@@ -166,6 +166,9 @@ startLoginBtn.addEventListener('click', async () => {
     await set(ref(db, 'state/login_status'), "REQUESTED");
     
     mfaStatusText.textContent = "Starting headless browser on GitHub Actions...";
+    
+    // Automatically wake up the bot
+    triggerGhBtn.click();
 });
 
 // Listen to MFA / Login Status
