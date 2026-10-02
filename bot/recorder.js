@@ -72,11 +72,13 @@ async function stopRecorder(proc) {
 }
 
 async function clickPlay(page) {
+  // Use exact matches to avoid clicking "Playlist" in SharePoint sidebar
   const selectors = [
-    'button[aria-label*="Play" i]',
-    '[role="button"][aria-label*="Play" i]',
-    'button[title*="Play" i]',
-    '[data-tid*="play" i]'
+    'button[aria-label="Play" i]',
+    'button[aria-label="Play video" i]',
+    '[role="button"][aria-label="Play" i]',
+    'button[title="Play" i]',
+    'button[data-tid="play-button"]'
   ];
 
   for (const selector of selectors) {
@@ -173,6 +175,26 @@ async function recordClass(url, outputPath, cookies, options = {}) {
     await page.bringToFront();
 
     const clicked = await clickPlay(page);
+
+    // Try to enter fullscreen to avoid recording UI elements
+    try {
+      await page.keyboard.press('f'); // Generic fullscreen hotkey
+      const fsSelectors = [
+        'button[aria-label="Full screen" i]',
+        'button[aria-label="Fullscreen" i]',
+        'button[title="Full screen" i]',
+        'button[title="Fullscreen" i]',
+        'button[data-automation-id="fullscreen-button" i]'
+      ];
+      for (const fsSel of fsSelectors) {
+        const fsLoc = page.locator(fsSel).first();
+        if (await fsLoc.isVisible({ timeout: 1000 })) {
+          await fsLoc.click({ timeout: 2000 });
+          break;
+        }
+      }
+    } catch (_) {}
+
     const playback = await waitForPlayback(page, 15000);
     if (!clicked && !playback) {
       throw new Error('Could not start Teams playback. Check the recording URL and saved Teams session.');
