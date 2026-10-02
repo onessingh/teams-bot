@@ -161,16 +161,29 @@ async function recordClass(url, outputPath, cookies, options = {}) {
     }
 
     const page = await context.newPage();
-    page.on('console', msg => console.log(`[Teams] ${msg.text()}`));
-    page.on('pageerror', err => console.log(`[Teams pageerror] ${err.message}`));
+    page.on('console', msg => console.log(`"[Teams] `${msg.text()}`"));
+    page.on('pageerror', err => console.log(`"[Teams pageerror] `${err.message}`"));
 
-    console.log('🌐 Opening Teams recording...');
+    console.log('[DEBUG] Warming up MS Teams session to refresh SSO tokens...');
+    await page.goto('https://teams.microsoft.com', { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+    await page.waitForTimeout(5000);
+
+    console.log('?? Opening Teams recording...');
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 });
     await page.waitForTimeout(8000);
 
     if (/login|signin|authorize/i.test(page.url())) {
       console.log('[DEBUG] Hit login page during recording. Attempting to bypass SSO or re-enter credentials...');
       try {
+        // Handle Email if asked
+        const emailInput = page.locator('input[type="email"]');
+        if (options.creds && options.creds.email && await emailInput.isVisible({ timeout: 2000 })) {
+          console.log('[DEBUG] Email requested, filling...');
+          await emailInput.fill(options.creds.email);
+          await page.locator('input[type="submit"]').click();
+          await page.waitForNavigation({ timeout: 15000 }).catch(() => {});
+        }
+
         // Handle "Pick an account"
         const accountTile = page.locator('.tile-container, .table').first();
         if (await accountTile.isVisible({ timeout: 5000 })) {
@@ -322,3 +335,6 @@ async function recordClass(url, outputPath, cookies, options = {}) {
 }
 
 module.exports = { recordClass };
+
+
+
