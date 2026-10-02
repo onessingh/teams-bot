@@ -165,14 +165,10 @@ startLoginBtn.addEventListener('click', async () => {
     // Trigger Bot state
     await set(ref(db, 'state/login_status'), "REQUESTED");
     
-    mfaStatusText.textContent = "Waiting for bot... Click 'Start Cloud Bot' below!";
+    mfaStatusText.textContent = "Waiting for bot to login..."; triggerGhBtn.click();
 });
 
-// User requested explicit button inside modal
-const modalTriggerGhBtn = document.getElementById('modal-trigger-gh-btn');
-modalTriggerGhBtn.addEventListener('click', () => {
-    triggerGhBtn.click();
-});
+
 
 // Listen to MFA / Login Status
 onValue(ref(db, 'state'), (snapshot) => {
@@ -305,3 +301,5 @@ async function triggerGitHubAction(token) {
         }, 3000);
     }
 }
+
+
