@@ -145,8 +145,10 @@ async function recordClass(url, outputPath, cookies, options = {}) {
         '--disable-gpu',
         '--disable-dev-shm-usage',
         '--window-size=1280,720',
+        '--app=data:text/html,<html></html>',
         '--kiosk',
         '--start-fullscreen',
+        '--window-position=0,0',
         '--disable-infobars',
         '--disable-background-timer-throttling',
         '--disable-backgrounding-occluded-windows',
@@ -155,7 +157,7 @@ async function recordClass(url, outputPath, cookies, options = {}) {
     });
 
     const context = await browser.newContext({
-      viewport: { width: 1280, height: 720 },
+      viewport: null,
       deviceScaleFactor: 1
     });
 
@@ -264,7 +266,8 @@ async function recordClass(url, outputPath, cookies, options = {}) {
 
     // Try to enter fullscreen to avoid recording UI elements
     try {
-      await page.keyboard.press('f'); // Generic fullscreen hotkey
+      await page.keyboard.press('F11'); // Force browser fullscreen
+      await page.keyboard.press('f'); // Generic video fullscreen hotkey
       const fsSelectors = [
         'button[aria-label="Full screen" i]',
         'button[aria-label="Fullscreen" i]',
@@ -374,6 +377,9 @@ async function recordClass(url, outputPath, cookies, options = {}) {
 }
 
 module.exports = { recordClass };
+
+
+
 
 
 
