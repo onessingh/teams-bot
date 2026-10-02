@@ -161,8 +161,8 @@ async function recordClass(url, outputPath, cookies, options = {}) {
     }
 
     const page = await context.newPage();
-    page.on('console', msg => console.log(`"[Teams] `${msg.text()}`"));
-    page.on('pageerror', err => console.log(`"[Teams pageerror] `${err.message}`"));
+    page.on('console', msg => console.log(`[Teams] ${msg.text()}`));
+    page.on('pageerror', err => console.log(`[Teams pageerror] ${err.message}`));
 
     console.log('[DEBUG] Warming up MS Teams session to refresh SSO tokens...');
     await page.goto('https://teams.microsoft.com', { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
