@@ -211,6 +211,14 @@ async function recordClass(url, outputPath, cookies, options = {}) {
           await kmsiYes.click();
           await page.waitForNavigation({ timeout: 15000 }).catch(() => {});
         }
+
+        // Handle "Let's keep your account secure" (MFA Setup) skip button
+        const skipBtn = page.locator('#btnAskLater, a:has-text("Skip"), a:has-text("Cancel")').first();
+        if (await skipBtn.isVisible({ timeout: 3000 })) {
+          console.log('[DEBUG] Found Skip/Cancel button for MFA setup, clicking...');
+          await skipBtn.click();
+          await page.waitForNavigation({ timeout: 15000 }).catch(() => {});
+        }
       } catch (e) {
         console.log('[DEBUG] SSO bypass attempts finished or skipped.', e.message);
       }
