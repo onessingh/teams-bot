@@ -283,6 +283,9 @@ async function recordClass(url, outputPath, cookies, options = {}) {
       }
     } catch (_) {}
 
+    // Hide video player timeline by moving mouse to top-left corner
+    await page.mouse.move(0, 0);
+
     const playback = await waitForPlayback(page, 15000);
     if (!clicked && !playback) {
       throw new Error('Could not start Teams playback. Check the recording URL and saved Teams session.');
@@ -338,6 +341,8 @@ async function recordClass(url, outputPath, cookies, options = {}) {
       if (loopCount % 30 === 0) {
         try {
           await page.mouse.move(100 + Math.random() * 500, 100 + Math.random() * 500);
+          await page.waitForTimeout(500);
+          await page.mouse.move(0, 0); // Hide timeline again
         } catch (e) {}
       }
       
@@ -376,6 +381,8 @@ async function recordClass(url, outputPath, cookies, options = {}) {
 }
 
 module.exports = { recordClass };
+
+
 
 
 
