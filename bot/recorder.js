@@ -135,13 +135,17 @@ async function recordClass(url, outputPath, cookies, options = {}) {
   try {
     browser = await chromium.launch({
       headless: false,
+      channel: 'chrome',
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--autoplay-policy=no-user-gesture-required',
         '--disable-gpu',
         '--disable-dev-shm-usage',
-        '--window-size=1280,720'
+        '--window-size=1280,720',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding'
       ]
     });
 
