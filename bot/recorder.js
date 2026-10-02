@@ -219,8 +219,17 @@ async function recordClass(url, outputPath, cookies, options = {}) {
 
     // Smart monitoring loop instead of a blind sleep
     const startTime = Date.now();
+    let loopCount = 0;
     while (Date.now() - startTime < recordMs) {
       await sleep(10000); // check every 10 seconds
+      loopCount++;
+
+      // Anti-Idle: Move mouse randomly every 5 minutes to prevent MS Teams "Are you still watching?" popup
+      if (loopCount % 30 === 0) {
+        try {
+          await page.mouse.move(100 + Math.random() * 500, 100 + Math.random() * 500);
+        } catch (e) {}
+      }
       
       try {
         const isEnded = await page.evaluate(() => {
