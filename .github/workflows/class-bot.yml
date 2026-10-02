@@ -34,12 +34,12 @@ jobs:
           pactl list short sinks
           pactl list short sources
 
-          Xvfb :99 -screen 0 1280x720x24 -ac > /tmp/xvfb.log 2>&1 &
+          Xvfb :99 -screen 0 1280x805x24 -ac > /tmp/xvfb.log 2>&1 &
           sleep 2
           DISPLAY=:99 openbox &
           echo "DISPLAY=:99" >> "$GITHUB_ENV"
           echo "PULSE_CAPTURE_SOURCE=teams_sink.monitor" >> "$GITHUB_ENV"
-          echo "RECORDING_SIZE=1280x720" >> "$GITHUB_ENV"
+          echo "RECORDING_SIZE=1280x805" >> "$GITHUB_ENV"
           echo "RECORDING_FPS=15" >> "$GITHUB_ENV"
           echo "MAX_RECORDING_MS=18000000" >> "$GITHUB_ENV"
           sleep 3
@@ -52,4 +52,5 @@ jobs:
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
         run: npm start
+
 

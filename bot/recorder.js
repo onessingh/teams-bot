@@ -40,6 +40,7 @@ async function startRecorder(outputPath, maxMs) {
     '-c:v', 'libx264',
     '-preset', process.env.FFMPEG_PRESET || 'veryfast',
     '-crf', process.env.FFMPEG_CRF || '23',
+    '-vf', 'crop=1280:720:0:85',
     '-pix_fmt', 'yuv420p',
     '-c:a', 'aac',
     '-b:a', process.env.FFMPEG_AUDIO_BITRATE || '128k',
@@ -144,7 +145,7 @@ async function recordClass(url, outputPath, cookies, options = {}) {
         '--autoplay-policy=no-user-gesture-required',
         '--disable-gpu',
         '--disable-dev-shm-usage',
-        '--window-size=1280,720',
+        '--window-size=1280,805',
         '--app=data:text/html,<html></html>',
         '--kiosk',
         '--start-fullscreen',
@@ -263,25 +264,27 @@ async function recordClass(url, outputPath, cookies, options = {}) {
 
     const clicked = await clickPlay(page);
 
-    // Try to enter fullscreen to avoid recording UI elements
+        // Force absolute fullscreen on the video element via DOM injection
     try {
-      await page.keyboard.press('F11'); // Force browser fullscreen
-      await page.keyboard.press('f'); // Generic video fullscreen hotkey
-      const fsSelectors = [
-        'button[aria-label="Full screen" i]',
-        'button[aria-label="Fullscreen" i]',
-        'button[title="Full screen" i]',
-        'button[title="Fullscreen" i]',
-        'button[data-automation-id="fullscreen-button" i]'
-      ];
-      for (const fsSel of fsSelectors) {
-        const fsLoc = page.locator(fsSel).first();
-        if (await fsLoc.isVisible({ timeout: 1000 })) {
-          await fsLoc.click({ timeout: 2000 });
-          break;
+      await page.evaluate(() => {
+        const v = document.querySelector('video');
+        if (v) {
+          v.style.position = 'fixed';
+          v.style.top = '0';
+          v.style.left = '0';
+          v.style.width = '100vw';
+          v.style.height = '100vh';
+          v.style.zIndex = '2147483647';
+          v.style.backgroundColor = 'black';
+          v.style.objectFit = 'contain';
+          v.controls = false;
         }
-      }
-    } catch (_) {}
+        // Force hide everything else
+        const style = document.createElement('style');
+        style.innerHTML = '* { cursor: none !important; } [data-testid="player-controls"], .mejs-controls, .vjs-control-bar { display: none !important; opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; }';
+        document.head.appendChild(style);
+      });
+    } catch(e) {}
 
     // Hide video player timeline by moving mouse to top-left corner
     await page.mouse.move(0, 0);
@@ -381,6 +384,9 @@ async function recordClass(url, outputPath, cookies, options = {}) {
 }
 
 module.exports = { recordClass };
+
+
+
 
 
 
