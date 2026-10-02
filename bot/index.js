@@ -29,8 +29,15 @@ fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 console.log('🤖 Bot is online and listening to Firebase...');
 
 async function handleLoginRequest() {
-  const status = (await db.ref('state/login_status').once('value')).val();
-  if (status !== 'REQUESTED') return;
+  const statusSnap = await db.ref('state/login_status').once('value');
+  const status = statusSnap.val();
+  console.log(`[DEBUG] Current login_status in DB is: '${status}'`);
+  
+  if (status !== 'REQUESTED') {
+    console.log('[DEBUG] Skipping login flow because status is not REQUESTED.');
+    return;
+  }
+  
   console.log('🔔 Login request received.');
   try {
     await doTeamsLogin(db);
