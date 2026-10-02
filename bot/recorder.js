@@ -236,7 +236,22 @@ async function recordClass(url, outputPath, cookies, options = {}) {
             console.log('[DEBUG] Failed to take screenshot', scrErr);
           }
         }
-        throw new Error('Teams session appears to be expired or login is required. Re-login from the dashboard.');
+        let reason = "Unknown login prompt";
+        try {
+            const finalBody = await page.locator('body').innerText();
+            const cleanText = finalBody.replace(/\s+/g, ' ').trim();
+            if (cleanText.includes("Let's keep your account secure") || cleanText.includes("more information required")) {
+                reason = "Microsoft is demanding MFA/Security Info Setup (Verify phone/app in incognito).";
+            } else if (cleanText.includes("Enter password")) {
+                reason = "Password rejected or expired.";
+            } else if (cleanText.includes("Approve sign in")) {
+                reason = "Stuck waiting for Microsoft Authenticator app approval.";
+            } else {
+                reason = cleanText.substring(0, 100) + "...";
+            }
+        } catch(e) {}
+        
+        throw new Error(`Teams Login Blocked: ${reason} (Re-login from the dashboard)`);
       }
     }
 

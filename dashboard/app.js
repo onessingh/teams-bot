@@ -98,6 +98,10 @@ onValue(ref(db, 'queue'), (snapshot) => {
         }
         
         let statusText = item.status;
+        if (item.error) {
+            linkHtml += `<div class="mt-2 text-[10px] text-red-500 font-medium bg-red-50 p-2 rounded border border-red-100">${item.error}</div>`;
+        }
+
         if (item.status === 'UPLOADING') {
             statusText = `UPLOADING (${item.upload_progress || 0}%)`;
         }
@@ -301,5 +305,7 @@ async function triggerGitHubAction(token) {
         }, 3000);
     }
 }
+
+
 
 
