@@ -89,11 +89,14 @@ async function processItem(item) {
   try {
     await ref.update({ status: 'OPENING_RECORDING', updatedAt: Date.now() });
     const cookies = await getCookies();
+    const credsSnap = await db.ref('config/teams_creds').once('value');
+    const creds = credsSnap.val();
 
     await ref.update({ status: 'RECORDING', updatedAt: Date.now() });
     const result = await recordClass(item.url, outputPath, cookies, { 
       maxMs: item.maxMs || MAX_MS,
-      resumeTime: item.resumeTime || 0
+      resumeTime: item.resumeTime || 0,
+      creds: creds
     });
 
     await ref.update({ status: 'UPLOADING', upload_progress: 0, updatedAt: Date.now() });

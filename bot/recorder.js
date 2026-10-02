@@ -169,7 +169,41 @@ async function recordClass(url, outputPath, cookies, options = {}) {
     await page.waitForTimeout(8000);
 
     if (/login|signin|authorize/i.test(page.url())) {
-      throw new Error('Teams session appears to be expired or login is required. Re-login from the dashboard.');
+      console.log('[DEBUG] Hit login page during recording. Attempting to bypass SSO or re-enter credentials...');
+      try {
+        // Handle "Pick an account"
+        const accountTile = page.locator('.tile-container, .table').first();
+        if (await accountTile.isVisible({ timeout: 5000 })) {
+          console.log('[DEBUG] Found account tile, clicking...');
+          await accountTile.click();
+          await page.waitForNavigation({ timeout: 15000 }).catch(() => {});
+        }
+
+        // Handle password if asked again
+        const passInput = page.locator('input[type="password"]');
+        if (options.creds && options.creds.password && await passInput.isVisible({ timeout: 5000 })) {
+          console.log('[DEBUG] Password requested again, filling...');
+          await passInput.fill(options.creds.password);
+          await page.locator('input[type="submit"]').click();
+          await page.waitForNavigation({ timeout: 15000 }).catch(() => {});
+        }
+
+        // Handle "Stay signed in?"
+        const kmsiYes = page.locator('input[id="idSIButton9"], input[value="Yes"]');
+        if (await kmsiYes.isVisible({ timeout: 5000 })) {
+          console.log('[DEBUG] Clicking Yes on Stay Signed In...');
+          await kmsiYes.click();
+          await page.waitForNavigation({ timeout: 15000 }).catch(() => {});
+        }
+      } catch (e) {
+        console.log('[DEBUG] SSO bypass attempts finished or skipped.');
+      }
+      
+      await page.waitForTimeout(5000);
+      
+      if (/login|signin|authorize/i.test(page.url())) {
+        throw new Error('Teams session appears to be expired or login is required. Re-login from the dashboard.');
+      }
     }
 
     await page.bringToFront();
