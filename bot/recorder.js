@@ -157,8 +157,7 @@ async function recordClass(url, outputPath, cookies, options = {}) {
     });
 
     const context = await browser.newContext({
-      viewport: null,
-      deviceScaleFactor: 1
+      viewport: null
     });
 
     if (Array.isArray(cookies) && cookies.length) {
@@ -377,6 +376,7 @@ async function recordClass(url, outputPath, cookies, options = {}) {
 }
 
 module.exports = { recordClass };
+
 
 
 
