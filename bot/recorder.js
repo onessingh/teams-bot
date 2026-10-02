@@ -145,6 +145,9 @@ async function recordClass(url, outputPath, cookies, options = {}) {
         '--disable-gpu',
         '--disable-dev-shm-usage',
         '--window-size=1280,720',
+        '--kiosk',
+        '--start-fullscreen',
+        '--disable-infobars',
         '--disable-background-timer-throttling',
         '--disable-backgrounding-occluded-windows',
         '--disable-renderer-backgrounding'
@@ -371,6 +374,7 @@ async function recordClass(url, outputPath, cookies, options = {}) {
 }
 
 module.exports = { recordClass };
+
 
 
 
