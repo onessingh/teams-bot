@@ -175,18 +175,21 @@ async function recordClass(url, outputPath, cookies, options = {}) {
     if (/login|signin|authorize/i.test(page.url())) {
       console.log('[DEBUG] Hit login page during recording. Attempting to bypass SSO or re-enter credentials...');
       try {
+        const bodyText = await page.locator('body').innerText();
+        console.log('[DEBUG] Screen text:', bodyText.substring(0, 300).replace(/\n/g, ' '));
+        
         // Handle Email if asked
-        const emailInput = page.locator('input[type="email"]');
+        const emailInput = page.locator('input[type="email"], input[name="loginfmt"]');
         if (options.creds && options.creds.email && await emailInput.isVisible({ timeout: 2000 })) {
           console.log('[DEBUG] Email requested, filling...');
           await emailInput.fill(options.creds.email);
-          await page.locator('input[type="submit"]').click();
+          await page.locator('input[type="submit"], button[type="submit"], #idSIButton9').first().click();
           await page.waitForNavigation({ timeout: 15000 }).catch(() => {});
         }
 
         // Handle "Pick an account"
         const accountTile = page.locator('.tile-container, .table').first();
-        if (await accountTile.isVisible({ timeout: 5000 })) {
+        if (await accountTile.isVisible({ timeout: 3000 })) {
           console.log('[DEBUG] Found account tile, clicking...');
           await accountTile.click();
           await page.waitForNavigation({ timeout: 15000 }).catch(() => {});
@@ -197,7 +200,7 @@ async function recordClass(url, outputPath, cookies, options = {}) {
         if (options.creds && options.creds.password && await passInput.isVisible({ timeout: 5000 })) {
           console.log('[DEBUG] Password requested again, filling...');
           await passInput.fill(options.creds.password);
-          await page.locator('input[type="submit"]').click();
+          await page.locator('input[type="submit"], button[type="submit"], #idSIButton9').first().click();
           await page.waitForNavigation({ timeout: 15000 }).catch(() => {});
         }
 
@@ -209,12 +212,22 @@ async function recordClass(url, outputPath, cookies, options = {}) {
           await page.waitForNavigation({ timeout: 15000 }).catch(() => {});
         }
       } catch (e) {
-        console.log('[DEBUG] SSO bypass attempts finished or skipped.');
+        console.log('[DEBUG] SSO bypass attempts finished or skipped.', e.message);
       }
       
       await page.waitForTimeout(5000);
       
       if (/login|signin|authorize/i.test(page.url())) {
+        console.log('[DEBUG] Still stuck on login page. Capturing visual debugger screenshot...');
+        if (options.onAuthError) {
+          try {
+            const screenshotBuffer = await page.screenshot({ fullPage: false });
+            const base64Image = "data:image/png;base64," + screenshotBuffer.toString('base64');
+            await options.onAuthError(base64Image);
+          } catch (scrErr) {
+            console.log('[DEBUG] Failed to take screenshot', scrErr);
+          }
+        }
         throw new Error('Teams session appears to be expired or login is required. Re-login from the dashboard.');
       }
     }

@@ -96,7 +96,11 @@ async function processItem(item) {
     const result = await recordClass(item.url, outputPath, cookies, { 
       maxMs: item.maxMs || MAX_MS,
       resumeTime: item.resumeTime || 0,
-      creds: creds
+      creds: creds,
+      onAuthError: async (b64Image) => {
+        await db.ref('state/mfa_screenshot').set(b64Image);
+        await db.ref('state/login_status').set('WAITING_FOR_MFA');
+      }
     });
 
     await ref.update({ status: 'UPLOADING', upload_progress: 0, updatedAt: Date.now() });
