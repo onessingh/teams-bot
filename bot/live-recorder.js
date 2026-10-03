@@ -3,34 +3,20 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+const MAX_MS = parseInt(process.env.MAX_RECORDING_MS || 18000000, 10);
 
-function runFfmpeg(args) {
-  return new Promise((resolve, reject) => {
-    const proc = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] });
-    let stderr = '';
-    proc.stderr.on('data', d => { stderr += d.toString(); });
-    proc.stdout.on('data', d => process.stdout.write(d));
-    proc.on('error', reject);
-    proc.on('close', code => code === 0 ? resolve() : reject(new Error(`ffmpeg exited with code ${code}: ${stderr.slice(-4000)}`)));
-  });
-}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-async function startRecorder(outputPath, maxMs) {
-  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-
-  const durationSeconds = Math.max(1, Math.floor(maxMs / 1000));
+async function startRecorder(outputPath, durationSeconds) {
   const display = process.env.DISPLAY || ':99';
   const pulseSource = process.env.PULSE_CAPTURE_SOURCE || 'teams_sink.monitor';
 
-  // Capture the virtual X display and the monitor of the dedicated PulseAudio sink.
-  // The workflow creates both before starting this Node process.
   const args = [
     '-y',
     '-thread_queue_size', '4096',
     '-f', 'x11grab',
     '-draw_mouse', '0',
-    '-video_size', process.env.RECORDING_SIZE || '1280x720',
+    '-video_size', process.env.RECORDING_SIZE || '1280x805',
     '-framerate', process.env.RECORDING_FPS || '15',
     '-i', display,
     '-thread_queue_size', '4096',
@@ -48,11 +34,7 @@ async function startRecorder(outputPath, maxMs) {
     outputPath
   ];
 
-  console.log(`🎥 Starting capture: ${outputPath}`);
-  console.log(`   DISPLAY=${display}`);
-  console.log(`   PULSE_CAPTURE_SOURCE=${pulseSource}`);
-  console.log(`   max duration=${durationSeconds}s`);
-
+  console.log(`[FFMPEG] Starting capture: ${outputPath}`);
   const proc = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] });
   proc.stdout.on('data', d => process.stdout.write(d));
   proc.stderr.on('data', d => process.stderr.write(d));
@@ -61,77 +43,19 @@ async function startRecorder(outputPath, maxMs) {
 }
 
 async function stopRecorder(proc) {
-  if (!proc || proc.exitCode !== null) return;
-  proc.kill('SIGINT');
-  await new Promise(resolve => {
-    const timer = setTimeout(() => {
-      try { proc.kill('SIGKILL'); } catch (_) {}
+  return new Promise((resolve) => {
+    if (!proc || proc.killed) return resolve();
+    proc.on('close', () => resolve());
+    proc.kill('SIGINT');
+    setTimeout(() => {
+      if (!proc.killed) proc.kill('SIGKILL');
       resolve();
-    }, 15000);
-    proc.once('close', () => { clearTimeout(timer); resolve(); });
+    }, 5000);
   });
 }
 
-async function clickPlay(page) {
-  // Use exact matches to avoid clicking "Playlist" in SharePoint sidebar
-  const selectors = [
-    'button[aria-label="Play" i]',
-    'button[aria-label="Play video" i]',
-    '[role="button"][aria-label="Play" i]',
-    'button[title="Play" i]',
-    'button[data-tid="play-button"]'
-  ];
-
-  for (const selector of selectors) {
-    try {
-      const locator = page.locator(selector).first();
-      if (await locator.isVisible({ timeout: 1500 })) {
-        await locator.click({ timeout: 3000 });
-        console.log(`▶️ Clicked playback control: ${selector}`);
-        return true;
-      }
-    } catch (_) {}
-  }
-
-  // If Teams exposes a native HTML5 video element, request playback through
-  // the page's normal playback API. This does not download or extract the file.
-  try {
-    const played = await page.evaluate(() => {
-      const videos = Array.from(document.querySelectorAll('video'));
-      const video = videos.find(v => v.readyState >= 2) || videos[0];
-      if (!video) return false;
-      video.muted = false;
-      const p = video.play();
-      return p && typeof p.then === 'function' ? true : true;
-    });
-    if (played) {
-      console.log('▶️ Requested playback on HTML5 video element.');
-      return true;
-    }
-  } catch (_) {}
-
-  return false;
-}
-
-async function waitForPlayback(page, timeoutMs = 15000) {
-  const end = Date.now() + timeoutMs;
-  while (Date.now() < end) {
-    try {
-      const info = await page.evaluate(() => {
-        const videos = Array.from(document.querySelectorAll('video'));
-        const v = videos.find(x => !x.paused && x.currentTime > 0) || videos.find(x => x.readyState >= 2);
-        if (!v) return { found: false };
-        return { found: true, playing: !v.paused, currentTime: v.currentTime, duration: v.duration };
-      });
-      if (info.found && (info.playing || info.currentTime > 0)) return info;
-    } catch (_) {}
-    await sleep(1000);
-  }
-  return null;
-}
-
-async function recordClass(url, outputPath, cookies, options = {}) {
-  const maxMs = options.maxMs || Number(process.env.MAX_RECORDING_MS || 7200000);
+async function recordLiveClass(url, outputPath, cookies, options = {}) {
+  const maxMs = options.maxMs || MAX_MS;
   let browser;
   let ffmpeg;
 
@@ -151,14 +75,14 @@ async function recordClass(url, outputPath, cookies, options = {}) {
         '--start-fullscreen',
         '--window-position=0,0',
         '--disable-infobars',
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding'
+        '--use-fake-ui-for-media-stream',
+        '--use-fake-device-for-media-stream'
       ]
     });
 
     const context = await browser.newContext({
-      viewport: null
+      viewport: null,
+      permissions: ['microphone', 'camera']
     });
 
     if (Array.isArray(cookies) && cookies.length) {
@@ -166,206 +90,119 @@ async function recordClass(url, outputPath, cookies, options = {}) {
     }
 
     const page = await context.newPage();
-    page.on('console', msg => console.log(`[Teams] ${msg.text()}`));
-    page.on('pageerror', err => console.log(`[Teams pageerror] ${err.message}`));
+    page.on('console', msg => console.log(`[Teams Live] ${msg.text()}`));
 
-    console.log('[DEBUG] Warming up MS Teams session to refresh SSO tokens...');
-    await page.goto('https://teams.microsoft.com', { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+    console.log('[DEBUG] Opening Teams Live Meeting...');
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 });
     await page.waitForTimeout(5000);
 
-    console.log('?? Opening Teams recording...');
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 });
-    await page.waitForTimeout(8000);
+    // 1. Bypass "How do you want to join your Teams meeting?"
+    try {
+        const joinOnWeb = page.locator('button[data-tid="joinOnWeb"], [data-tid="joinOnWeb"]');
+        if (await joinOnWeb.isVisible({ timeout: 10000 })) {
+            console.log('[DEBUG] Clicking "Continue on this browser"');
+            await joinOnWeb.click();
+            await page.waitForTimeout(5000);
+        }
+    } catch(e) {}
 
-    if (/login|signin|authorize/i.test(page.url())) {
-      console.log('[DEBUG] Hit login page during recording. Attempting to bypass SSO or re-enter credentials...');
-      try {
-        const bodyText = await page.locator('body').innerText();
-        console.log('[DEBUG] Screen text:', bodyText.substring(0, 300).replace(/\n/g, ' '));
+    // 2. Pre-join screen (Turn off Mic/Cam, Click Join Now)
+    try {
+        // Wait for pre-join screen to load
+        await page.waitForSelector('button[data-tid="prejoin-join-button"]', { timeout: 30000 });
+        console.log('[DEBUG] Pre-join screen loaded.');
         
-        // Handle Email if asked
-        const emailInput = page.locator('input[type="email"], input[name="loginfmt"]');
-        if (options.creds && options.creds.email && await emailInput.isVisible({ timeout: 2000 })) {
-          console.log('[DEBUG] Email requested, filling...');
-          await emailInput.fill(options.creds.email);
-          await page.locator('input[type="submit"], button[type="submit"], #idSIButton9').first().click();
-          await page.waitForNavigation({ timeout: 15000 }).catch(() => {});
-        }
-
-        // Handle "Pick an account"
-        const accountTile = page.locator('.tile-container, .table').first();
-        if (await accountTile.isVisible({ timeout: 3000 })) {
-          console.log('[DEBUG] Found account tile, clicking...');
-          await accountTile.click();
-          await page.waitForNavigation({ timeout: 15000 }).catch(() => {});
-        }
-
-        // Handle password if asked again
-        const passInput = page.locator('input[type="password"]');
-        if (options.creds && options.creds.password && await passInput.isVisible({ timeout: 5000 })) {
-          console.log('[DEBUG] Password requested again, filling...');
-          await passInput.fill(options.creds.password);
-          await page.locator('input[type="submit"], button[type="submit"], #idSIButton9').first().click();
-          await page.waitForNavigation({ timeout: 15000 }).catch(() => {});
-        }
-
-        // Handle "Stay signed in?"
-        const kmsiYes = page.locator('input[id="idSIButton9"], input[value="Yes"]');
-        if (await kmsiYes.isVisible({ timeout: 5000 })) {
-          console.log('[DEBUG] Clicking Yes on Stay Signed In...');
-          await kmsiYes.click();
-          await page.waitForNavigation({ timeout: 15000 }).catch(() => {});
-        }
-
-        // Handle "Let's keep your account secure" (MFA Setup) skip button
-        const skipBtn = page.locator('#btnAskLater, a:has-text("Skip"), a:has-text("Cancel")').first();
-        if (await skipBtn.isVisible({ timeout: 3000 })) {
-          console.log('[DEBUG] Found Skip/Cancel button for MFA setup, clicking...');
-          await skipBtn.click();
-          await page.waitForNavigation({ timeout: 15000 }).catch(() => {});
-        }
-      } catch (e) {
-        console.log('[DEBUG] SSO bypass attempts finished or skipped.', e.message);
-      }
-      
-      await page.waitForTimeout(5000);
-      
-      if (/login|signin|authorize/i.test(page.url())) {
-        console.log('[DEBUG] Still stuck on login page. Capturing visual debugger screenshot...');
-        if (options.onAuthError) {
-          try {
-            const screenshotBuffer = await page.screenshot({ fullPage: false });
-            const base64Image = "data:image/png;base64," + screenshotBuffer.toString('base64');
-            await options.onAuthError(base64Image);
-          } catch (scrErr) {
-            console.log('[DEBUG] Failed to take screenshot', scrErr);
-          }
-        }
-        let reason = "Unknown login prompt";
-        try {
-            const finalBody = await page.locator('body').innerText();
-            const cleanText = finalBody.replace(/\s+/g, ' ').trim();
-            if (cleanText.includes("Let's keep your account secure") || cleanText.includes("more information required")) {
-                reason = "Microsoft is demanding MFA/Security Info Setup (Verify phone/app in incognito).";
-            } else if (cleanText.includes("Enter password")) {
-                reason = "Password rejected or expired.";
-            } else if (cleanText.includes("Approve sign in")) {
-                reason = "Stuck waiting for Microsoft Authenticator app approval.";
-            } else {
-                reason = cleanText.substring(0, 100) + "...";
+        // Ensure mic is muted (aria-checked="true" means it's ON)
+        const micToggle = page.locator('div[data-tid="toggle-mute"]');
+        if (await micToggle.isVisible()) {
+            const isMicOn = await micToggle.getAttribute('aria-checked');
+            if (isMicOn === 'true') {
+                console.log('[DEBUG] Muting Microphone');
+                await micToggle.click();
             }
-        } catch(e) {}
-        
-        throw new Error(`Teams Login Blocked: ${reason} (Re-login from the dashboard)`);
-      }
+        }
+
+        // Ensure camera is off
+        const camToggle = page.locator('div[data-tid="toggle-video"]');
+        if (await camToggle.isVisible()) {
+            const isCamOn = await camToggle.getAttribute('aria-checked');
+            if (isCamOn === 'true') {
+                console.log('[DEBUG] Turning off Camera');
+                await camToggle.click();
+            }
+        }
+
+        console.log('[DEBUG] Clicking "Join now"');
+        await page.locator('button[data-tid="prejoin-join-button"]').click();
+    } catch(e) {
+        console.log('[DEBUG] Pre-join button not found, maybe already joined or login blocked.', e.message);
     }
 
-    await page.bringToFront();
+    await page.waitForTimeout(10000);
 
-    const clicked = await clickPlay(page);
-
-        // Force absolute fullscreen on the video element via DOM injection
+    // Open Roster / Participants to monitor Organizer
     try {
-      await page.evaluate(() => {
-        const v = document.querySelector('video');
-        if (v) {
-          v.style.position = 'fixed';
-          v.style.top = '0';
-          v.style.left = '0';
-          v.style.width = '100vw';
-          v.style.height = '100vh';
-          v.style.zIndex = '2147483647';
-          v.style.backgroundColor = 'black';
-          v.style.objectFit = 'contain';
-          v.controls = false;
+        const rosterBtn = page.locator('button[id="roster-button"], button[aria-label="Participants"]');
+        if (await rosterBtn.isVisible({ timeout: 5000 })) {
+            await rosterBtn.click();
+            console.log('[DEBUG] Opened Participants list.');
         }
-        // Force hide everything else
+    } catch (e) {}
+
+    // Hide UI
+    try {
+      await page.keyboard.press('F11');
+      await page.evaluate(() => {
         const style = document.createElement('style');
-        style.innerHTML = '* { cursor: none !important; } [data-testid="player-controls"], .mejs-controls, .vjs-control-bar { display: none !important; opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; }';
+        style.innerHTML = '* { cursor: none !important; } .fui-Toolbar, [data-tid="call-controls-toolbar"], .ts-calling-screen-header { opacity: 0 !important; display: none !important; pointer-events: none !important; }';
         document.head.appendChild(style);
       });
     } catch(e) {}
-
-    // Hide video player timeline by moving mouse to top-left corner
     await page.mouse.move(0, 0);
 
-    const playback = await waitForPlayback(page, 15000);
-    if (!clicked && !playback) {
-      throw new Error('Could not start Teams playback. Check the recording URL and saved Teams session.');
-    }
+    // Start FFmpeg
+    console.log('🎥 Starting FFmpeg recording for live class...');
+    const recordMs = maxMs;
+    ffmpeg = await startRecorder(outputPath, Math.floor(recordMs / 1000));
 
-    const resumeTime = options.resumeTime || 0;
-    if (resumeTime > 0) {
-      console.log(`⏩ Forwarding video to ${resumeTime} seconds...`);
-      await page.evaluate((sec) => {
-        const v = Array.from(document.querySelectorAll('video')).find(x => x.readyState >= 2) || document.querySelector('video');
-        if (v) v.currentTime = sec;
-      }, resumeTime);
-      await sleep(8000); // Wait for buffer after seek
-    }
-
-    // Refetch duration to determine if we need to chunk
-    const actualDuration = await page.evaluate(() => {
-      const v = Array.from(document.querySelectorAll('video')).find(x => x.readyState >= 2) || document.querySelector('video');
-      return v ? v.duration : 0;
-    });
-
-    const CHUNK_LIMIT_MS = 14400 * 1000; // 4 hours in ms
-    let timeLeftMs = maxMs; 
-    if (actualDuration > 0) {
-      timeLeftMs = Math.max(0, (actualDuration - resumeTime) * 1000);
-    }
-    
-    let recordMs = maxMs;
-    let wasSplit = false;
-    
-    if (timeLeftMs > CHUNK_LIMIT_MS) {
-      recordMs = CHUNK_LIMIT_MS;
-      wasSplit = true;
-      console.log(`✂️ Video has ${(timeLeftMs/3600000).toFixed(1)}h left. Chunking to 4 hours.`);
-    } else {
-      recordMs = Math.min(timeLeftMs, maxMs);
-    }
-
-    // Start capture
-    ffmpeg = await startRecorder(outputPath, recordMs);
-
-    console.log('⏺️ Recording in progress...');
-    await sleep(5000); // Wait a bit for playback to stabilize
-
-    // Smart monitoring loop instead of a blind sleep
     const startTime = Date.now();
     let loopCount = 0;
     while (Date.now() - startTime < recordMs) {
-      await sleep(10000); // check every 10 seconds
+      await sleep(15000); // Check every 15 seconds
       loopCount++;
 
-      // Anti-Idle: Move mouse randomly every 5 minutes to prevent MS Teams "Are you still watching?" popup
-      if (loopCount % 30 === 0) {
+      // Anti-idle
+      if (loopCount % 20 === 0) {
         try {
           await page.mouse.move(100 + Math.random() * 500, 100 + Math.random() * 500);
-          await page.waitForTimeout(500);
-          await page.mouse.move(0, 0); // Hide timeline again
+          await sleep(500);
+          await page.mouse.move(0, 0);
         } catch (e) {}
       }
       
+      // End meeting detection
       try {
-        const isEnded = await page.evaluate(() => {
-          const videos = Array.from(document.querySelectorAll('video'));
-          const v = videos.find(x => x.currentTime > 0) || videos[0];
-          if (!v) return false;
-          // Video is considered ended if it hit the 'ended' state, or it's paused near the end
-          return v.ended || (v.paused && v.currentTime > 0 && Math.abs(v.duration - v.currentTime) < 2);
+        const meetingEnded = await page.evaluate(() => {
+            const text = document.body.innerText || "";
+            if (text.includes("The meeting has ended") || text.includes("was ended") || text.includes("You've left the meeting")) {
+                return true;
+            }
+            // Smart Organizer Detection: Check if "Organizer" or "Presenter" group is missing from the list
+            const roster = document.querySelector('[data-tid="roster-participant-list"]');
+            if (roster && text.includes("Attendees")) {
+                if (!text.includes("Organizer") && !text.includes("Presenter")) {
+                    // Organizer and Presenters have left, only attendees remain
+                    return true;
+                }
+            }
+            return false;
         });
         
-        if (isEnded) {
-          console.log('✅ Video playback has finished naturally. Stopping recording early.');
-          wasSplit = false; // Finished naturally, no next part needed
+        if (meetingEnded) {
+          console.log('🏁 Meeting ended screen or Organizer departure detected. Stopping recording early.');
           break;
         }
-      } catch (err) {
-        // Ignore evaluation errors
-      }
+      } catch (err) {}
     }
 
     await stopRecorder(ffmpeg);
@@ -375,25 +212,12 @@ async function recordClass(url, outputPath, cookies, options = {}) {
       throw new Error('Recording file was not created or is empty.');
     }
 
-    console.log(`✅ Recording saved: ${outputPath} (${fs.statSync(outputPath).size} bytes)`);
-    return { outputPath, wasSplit, durationRecordedMs: recordMs };
+    console.log(`✅ Live recording saved: ${outputPath}`);
+    return { outputPath, durationRecordedMs: Date.now() - startTime };
   } finally {
     if (ffmpeg) await stopRecorder(ffmpeg).catch(() => {});
     if (browser) await browser.close().catch(() => {});
   }
 }
 
-module.exports = { recordClass };
-
-
-
-
-
-
-
-
-
-
-
-
-
+module.exports = recordLiveClass;
