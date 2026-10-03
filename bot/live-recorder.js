@@ -76,7 +76,8 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         '--window-position=0,0',
         '--disable-infobars',
         '--use-fake-ui-for-media-stream',
-        // removed fake device to use pulse fake_mic
+        '--use-fake-device-for-media-stream',
+        '--use-file-for-fake-audio-capture=' + path.resolve(__dirname, 'silence.wav')
       ]
     });
 
@@ -329,7 +330,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
       // End meeting detection
       try {
         const stats = await page.evaluate(() => {
-            const text = document.body.innerText || "";
+            const text = document.body.textContent || "";
             let ended = false;
             let currentCount = 0;
             
