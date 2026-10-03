@@ -158,6 +158,47 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             console.log('[DEBUG] Consent iframe handling error or not present:', e.message);
         }
 
+
+        // If cookies are invalid, Teams might ask for a guest name before enabling the Join button
+        try {
+            const nameInput = page.locator('input[data-tid="prejoin-display-name-input"]');
+            if (await nameInput.isVisible({ timeout: 2000 })) {
+                console.log('[DEBUG] Guest name input found. Typing name to enable Join button...');
+                await nameInput.fill('Class Bot');
+                await page.waitForTimeout(1000);
+            }
+        } catch (e) {}
+
+        // Ensure mic is muted (aria-checked="true" means it's ON)
+        try {
+            const micToggle = page.locator('[data-tid="toggle-mute"]');
+            if (await micToggle.isVisible({ timeout: 2000 })) {
+                const isMicOn = await micToggle.getAttribute('aria-checked');
+                if (isMicOn === 'true') {
+                    console.log('[DEBUG] Muting Microphone before joining...');
+                    await micToggle.click({ force: true });
+                    await page.waitForTimeout(1000);
+                }
+            }
+        } catch(e) {
+            console.log('[DEBUG] Mic toggle not found on prejoin');
+        }
+
+        // Ensure camera is off
+        try {
+            const camToggle = page.locator('[data-tid="toggle-video"]');
+            if (await camToggle.isVisible({ timeout: 2000 })) {
+                const isCamOn = await camToggle.getAttribute('aria-checked');
+                if (isCamOn === 'true') {
+                    console.log('[DEBUG] Turning off Camera before joining...');
+                    await camToggle.click({ force: true });
+                    await page.waitForTimeout(1000);
+                }
+            }
+        } catch(e) {
+            console.log('[DEBUG] Cam toggle not found on prejoin');
+        }
+
         console.log('[DEBUG] Clicking "Join now"');
         const joinBtn = page.locator('button[data-tid="prejoin-join-button"], button[data-tid="join-button"], button:has-text("Join now")').first();
         await joinBtn.click({ timeout: 10000, force: true });
@@ -176,12 +217,28 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
 
     // Double check mic is muted inside the meeting
     try {
-        const inMeetingMic = page.locator('[data-tid="toggle-mute"]');
+        const inMeetingMic = page.locator('[data-tid="toggle-mute"], button[aria-label*="Mute"], button[aria-label*="mic" i]').first();
         if (await inMeetingMic.isVisible({ timeout: 5000 })) {
-            if (await inMeetingMic.getAttribute('aria-checked') === 'true') {
+            const ariaChecked = await inMeetingMic.getAttribute('aria-checked');
+            const ariaLabel = await inMeetingMic.getAttribute('aria-label');
+            const isUnmuted = ariaChecked === 'true' || (ariaLabel && ariaLabel.toLowerCase().includes('mute') && !ariaLabel.toLowerCase().includes('unmute'));
+            
+            if (isUnmuted) {
                 console.log('[DEBUG] Mic was left ON in meeting, turning it OFF now!');
-                await inMeetingMic.click();
+                // Try keyboard shortcut first (Ctrl+Shift+M) as it is very reliable
+                await page.keyboard.press('Control+Shift+M');
+                await page.waitForTimeout(1000);
+                
+                // If still unmuted by checking state, try clicking it
+                const stillUnmuted = await inMeetingMic.getAttribute('aria-checked') === 'true';
+                if (stillUnmuted) {
+                     await inMeetingMic.click({ force: true });
+                }
             }
+        } else {
+            // Just blind fire Ctrl+Shift+M just in case we couldn't find the button but it's on
+            console.log('[DEBUG] Mic button not found, blind firing Ctrl+Shift+M to mute...');
+            await page.keyboard.press('Control+Shift+M');
         }
     } catch(e) {}
 
