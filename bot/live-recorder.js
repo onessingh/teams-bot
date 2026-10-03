@@ -277,6 +277,8 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
 
     const startTime = Date.now();
     let loopCount = 0;
+    let maxParticipants = 0;
+    
     while (Date.now() - startTime < recordMs) {
       await sleep(15000); // Check every 15 seconds
       loopCount++;
@@ -292,24 +294,54 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
       
       // End meeting detection
       try {
-        const meetingEnded = await page.evaluate(() => {
+        const stats = await page.evaluate(() => {
             const text = document.body.innerText || "";
+            let ended = false;
+            let currentCount = 0;
+            
             if (text.includes("The meeting has ended") || text.includes("was ended") || text.includes("You've left the meeting")) {
-                return true;
-            }
-            // Check if bot is completely alone
-            if (text.includes("In this meeting (1)") || text.includes("Waiting for others to join")) {
-                return true;
+                ended = true;
             }
             
-            // Smart Organizer Detection:
-            // If the participant list is open (we see "In this meeting") but there is NO "Organizer" text anywhere on the screen
-            if (text.includes("In this meeting") && !text.includes("Organizer")) {
-                return true;
+            // Check if bot is completely alone
+            if (text.includes("In this meeting (1)") || text.includes("Waiting for others to join")) {
+                ended = true;
+                currentCount = 1;
             }
-            return false;
+            
+            // Extract participant count
+            const match = text.match(/In this meeting \((\d+)\)/);
+            if (match) {
+                currentCount = parseInt(match[1], 10);
+            }
+            
+            return { ended, currentCount, text };
         });
         
+        let meetingEnded = stats.ended;
+        const currentCount = stats.currentCount;
+        
+        if (currentCount > maxParticipants) {
+            maxParticipants = currentCount;
+        }
+        
+        // Mass Exodus Detection (Class is over when 75% of people leave)
+        // Wait at least 10 minutes (40 loops * 15s = 600s) before enforcing this rule
+        if (loopCount > 40 && maxParticipants > 5) {
+            if (currentCount <= Math.ceil(maxParticipants * 0.25)) {
+                console.log([DEBUG] Mass exodus detected. Max was , now . Ending meeting.);
+                meetingEnded = true;
+            }
+        }
+        
+        // If max was very small (e.g. 2-5 people), exit if we drop to 2 or fewer and we waited 10 mins
+        if (loopCount > 40 && maxParticipants > 1 && maxParticipants <= 5) {
+            if (currentCount <= 2) {
+                 console.log([DEBUG] Small meeting drop detected. Max was , now . Ending meeting.);
+                 meetingEnded = true;
+            }
+        }
+
         if (meetingEnded) {
           console.log('🏁 Meeting ended screen or Organizer departure detected. Stopping recording early.');
           break;
