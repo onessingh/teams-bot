@@ -36,34 +36,21 @@ async function doTeamsLogin(db) {
         } catch(e) {}
 
         // Password
-        console.log("Waiting for password screen...");
+        console.log("Waiting for password screen or bypass...");
         try {
-            // Check if Microsoft asks to email a code instead of password
-            try {
-                console.log("Checking if 'Use your password' bypass is needed...");
-                const bypassSelectors = [
-                    '#idA_PWD_SwitchToPassword', 
-                    '#idA_PWD_SwitchToCredPicker', 
-                    'a:has-text("password")', 
-                    'button:has-text("password")'
-                ];
-                let clickedBypass = false;
-                for (const sel of bypassSelectors) {
-                    const bypass = page.locator(sel).first();
-                    if (await bypass.isVisible({ timeout: 2000 }).catch(()=>false)) {
-                        console.log(`Found bypass prompt (${sel}), clicking it...`);
-                        await bypass.click({ force: true });
-                        await page.waitForTimeout(2000);
-                        clickedBypass = true;
-                        break;
-                    }
-                }
-                if (!clickedBypass) console.log("Bypass button not visible, proceeding directly to password.");
-            } catch(e) {
-                console.log("Bypass check error:", e.message);
-            }
+            // Wait up to 15 seconds for EITHER the password field OR the text "Use your password"
+            const pwOrBypass = await page.waitForSelector('input[type="password"], :text-matches("Use your password", "i"), :text-matches("Use password", "i")', { timeout: 15000 });
             
-            await page.waitForSelector('input[type="password"]', { timeout: 15000 });
+            const isBypass = await page.evaluate(el => el.tagName.toLowerCase() !== 'input' && !el.type, pwOrBypass);
+            
+            if (isBypass) {
+                console.log("Found 'Use your password' bypass! Clicking it...");
+                await pwOrBypass.click({ force: true });
+                await page.waitForTimeout(2000);
+                await page.waitForSelector('input[type="password"]', { timeout: 10000 });
+            }
+
+            console.log("Entering password...");
             await page.locator('input[type="password"]').pressSequentially(creds.password, { delay: 50 });
             await page.waitForTimeout(1000);
             await page.locator('input[type="password"]').press('Enter');
@@ -74,7 +61,7 @@ async function doTeamsLogin(db) {
             console.log("Password field not found. Saving screenshot for debugging.");
             const errImg = await page.screenshot({ type: 'jpeg', quality: 50, fullPage: true });
             await db.ref('state/mfa_screenshot').set("data:image/jpeg;base64," + errImg.toString('base64'));
-            await page.waitForTimeout(3000); // Wait 3s to ensure Firebase finishes uploading the image!
+            await page.waitForTimeout(3000); // Wait 3s for Firebase
             throw new Error("Password field not found. Check dashboard for screenshot of what Microsoft is asking.");
         }
 
