@@ -441,6 +441,16 @@ onValue(ref(db, 'live_queue'), (snapshot) => {
 });
 
 liveTriggerBtn.addEventListener('click', async () => {
+    const token = localStorage.getItem('teams_gh_pat');
+    if (!token) {
+        // Open the github token modal if missing
+        const ghModal = document.getElementById('gh-token-modal');
+        const clearGhBtn = document.getElementById('clear-gh-btn');
+        if(ghModal) ghModal.classList.add('active');
+        if(clearGhBtn) clearGhBtn.classList.add('hidden');
+        return;
+    }
+
     const originalText = liveTriggerBtn.innerHTML;
     liveTriggerBtn.innerHTML = 'Starting Server...';
     liveTriggerBtn.disabled = true;
@@ -450,7 +460,7 @@ liveTriggerBtn.addEventListener('click', async () => {
             method: 'POST',
             headers: {
                 'Accept': 'application/vnd.github.v3+json',
-                'Authorization': 'token ' + GITHUB_TOKEN
+                'Authorization': 'token ' + token
             },
             body: JSON.stringify({
                 event_type: 'start-live-processing'
