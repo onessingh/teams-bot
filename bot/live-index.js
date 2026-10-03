@@ -3,7 +3,7 @@ const admin = require('firebase-admin');
 const fs = require('fs');
 const path = require('path');
 const { doTeamsLogin } = require('./teamsLogin');
-const { recordClass } = require('./live-recorder');
+const recordLiveClass = require('./live-recorder');
 const { uploadToYouTube } = require('./youtube');
 
 if (!process.env.FIREBASE_SERVICE_ACCOUNT_B64 || !process.env.FIREBASE_DB_URL) {
@@ -95,7 +95,7 @@ async function processItem(item) {
     const creds = credsSnap.val();
 
     await ref.update({ status: 'RECORDING', updatedAt: Date.now() });
-    const result = await recordClass(item.url, outputPath, cookies, { 
+    const result = await recordLiveClass(item.url, outputPath, cookies, { 
       maxMs: item.maxMs || MAX_MS,
       resumeTime: item.resumeTime || 0,
       creds: creds,
