@@ -1,0 +1,65 @@
+name: Automation Worker
+
+on:
+  repository_dispatch:
+    types: [start-live-processing]
+  workflow_dispatch:
+
+jobs:
+  process-live-class:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm install
+      - run: npx playwright install chromium chrome --with-deps
+
+      - name: Setup virtual display and audio
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb pulseaudio ffmpeg dbus-x11 openbox
+
+          # Dedicated PulseAudio sink; Chromium outputs system audio here and
+          # FFmpeg captures its monitor source.
+          pulseaudio --start --system=false --exit-idle-time=-1
+          pactl load-module module-null-sink sink_name=teams_sink sink_properties=device.description=TeamsCapture
+          pactl set-default-sink teams_sink
+          pactl set-default-source teams_sink.monitor
+          pactl list short sinks
+          pactl list short sources
+
+          Xvfb :99 -screen 0 1280x805x24 -ac > /tmp/xvfb.log 2>&1 &
+          sleep 2
+          DISPLAY=:99 openbox &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+          echo "PULSE_CAPTURE_SOURCE=teams_sink.monitor" >> "$GITHUB_ENV"
+          echo "RECORDING_SIZE=1280x805" >> "$GITHUB_ENV"
+          echo "RECORDING_FPS=15" >> "$GITHUB_ENV"
+          echo "MAX_RECORDING_MS=18000000" >> "$GITHUB_ENV"
+          sleep 3
+
+      - name: Run bot
+        env:
+          FIREBASE_SERVICE_ACCOUNT_B64: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_B64 }}
+          FIREBASE_DB_URL: ${{ secrets.FIREBASE_DB_URL }}
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+        run: node bot/live-index.js
+
+
+
+      - name: Save recorded video artifact if upload failed
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: recorded-video
+          path: fallback_video.mp4
+          retention-days: 3
+
