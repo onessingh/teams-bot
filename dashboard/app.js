@@ -48,12 +48,15 @@ addBtn.addEventListener('click', () => {
     const maxMs = durationMins * 60 * 1000;
     
     if(url) {
+        const recordedAccountSelect = document.getElementById('recorded-account');
+        const accountId = recordedAccountSelect ? recordedAccountSelect.value : 'default';
         push(ref(db, 'queue'), {
             title: "Class " + new Date().toLocaleString(),
             url: url,
             status: 'WAITING',
             maxMs: maxMs,
-            addedAt: Date.now()
+            addedAt: Date.now(),
+            accountId: accountId
         });
         linkInput.value = '';
     }

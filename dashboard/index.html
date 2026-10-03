@@ -46,9 +46,15 @@
                 
                 <div class="flex gap-2">
                     <div class="flex-1 relative">
+                    <div class="flex-1 relative max-w-[120px]">
                         <input type="number" id="teams-duration" placeholder="Duration" value="300"
                             class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm">
                         <span class="absolute right-3 top-3 text-xs text-gray-400 pointer-events-none mt-0.5">mins</span>
+                    </div>
+                    <div class="flex-1 relative">
+                        <select id="recorded-account" class="w-full px-4 py-3 rounded-lg border border-blue-300 focus:ring-2 focus:ring-blue-500 outline-none transition-all text-sm bg-white text-gray-700 appearance-none">
+                            <option value="default">Default Account</option>
+                        </select>
                     </div>
                     <button id="add-btn" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg text-sm font-bold transition-colors shadow-sm">
                         Add to Queue
