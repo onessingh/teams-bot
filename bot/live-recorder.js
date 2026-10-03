@@ -401,7 +401,6 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     let loopCount = 0;
     let maxParticipants = 0;
       const recentCounts = [];
-    const recentCounts = [];
     
     while (Date.now() - startTime < recordMs) {
       await sleep(15000); // Check every 15 seconds
