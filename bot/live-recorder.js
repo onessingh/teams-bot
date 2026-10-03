@@ -113,6 +113,24 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         console.log('[DEBUG] Pre-join screen loaded.');
         
         await page.waitForTimeout(3000); // Give toggles time to initialize state
+        // Attempt to clear any Unified Consent or cookie popups
+        try {
+            console.log('[DEBUG] Checking for consent iframes...');
+            await page.keyboard.press('Escape'); // First try to just escape it
+            await page.waitForTimeout(1000);
+            
+            const consentFrame = page.frameLocator('[data-tid="hosted-content-iframe"]');
+            if (await consentFrame.locator('body').isVisible({ timeout: 3000 })) {
+                console.log('[DEBUG] Found consent iframe, attempting to click Accept/Continue...');
+                // Click any button that looks like an accept/continue button, or just the first primary button
+                const acceptBtn = consentFrame.locator('button:has-text("Accept"), button:has-text("Agree"), button:has-text("Got it"), button:has-text("Continue"), button.fui-Button--primary').first();
+                await acceptBtn.click({ timeout: 2000, force: true });
+                await page.waitForTimeout(2000);
+            }
+        } catch (e) {
+            console.log('[DEBUG] No consent iframe needed or handled.', e.message);
+        }
+
         
         // If cookies are invalid, Teams might ask for a guest name before enabling the Join button
         try {
@@ -146,7 +164,14 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
 
         console.log('[DEBUG] Clicking "Join now"');
         const joinBtn = page.locator('button[data-tid="prejoin-join-button"], button[data-tid="join-button"], button:has-text("Join now")').first();
-        await joinBtn.click({ timeout: 10000, force: true });
+        await joinBtn.click({ timeout: 10000 });
+        
+        await page.waitForTimeout(2000);
+        if (await joinBtn.isVisible()) {
+             console.log('[DEBUG] Join button still visible, trying Enter key...');
+             await joinBtn.focus();
+             await page.keyboard.press('Enter');
+        }
     } catch(e) {
         console.log('[DEBUG] Pre-join button not found, maybe already joined or login blocked.', e.message);
     }
