@@ -192,15 +192,16 @@ onValue(ref(db, 'state'), (snapshot) => {
             }, 2000);
         }
     } else if (state.login_status === "WAITING_FOR_MFA") {
-        mfaStatusText.textContent = "🔔 Approve this request on your phone!";
+        mfaStatusText.textContent = "Approve this request on your phone!";
         mfaStatusText.className = "text-sm font-bold text-red-600 mb-3";
-        if (state.mfa_screenshot) {
-            mfaScreenshot.src = state.mfa_screenshot;
-            mfaScreenshot.classList.remove('hidden');
-        }
     } else if (state.login_status === "FAILED") {
-        mfaStatusText.textContent = "❌ Login Failed. Check credentials.";
+        mfaStatusText.textContent = "Login Failed. See screenshot below.";
         mfaStatusText.className = "text-sm font-bold text-red-600 mb-3";
+    }
+    
+    if (state.mfa_screenshot && (state.login_status === "WAITING_FOR_MFA" || state.login_status === "FAILED")) {
+        mfaScreenshot.src = state.mfa_screenshot;
+        mfaScreenshot.classList.remove('hidden');
     }
 });
 
@@ -555,3 +556,5 @@ async function updateGitHubLiveCron() {
         console.error('Failed to update GH cron', e);
     }
 }
+
+
