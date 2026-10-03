@@ -144,7 +144,7 @@ async function processItem(item) {
       updatedAt: Date.now()
     });
   } finally {
-    try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch (_) {}
+    try { if (fs.existsSync(outputPath)) { fs.renameSync(outputPath, 'fallback_video.mp4'); } } catch (_) {}
   }
 }
 
@@ -174,3 +174,4 @@ start().catch(error => {
   console.error("Fatal error in worker:", error);
   process.exit(1);
 });
+

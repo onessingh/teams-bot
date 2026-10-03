@@ -54,3 +54,11 @@ jobs:
         run: npm start
 
 
+
+      - name: Save recorded video artifact if upload failed
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: recorded-video
+          path: fallback_video.mp4
+          retention-days: 3
