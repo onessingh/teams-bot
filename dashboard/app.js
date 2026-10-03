@@ -492,8 +492,8 @@ onValue(ref(db, 'config'), (snap) => {
     if (sel && config) {
         sel.innerHTML = '';
         Object.keys(config).forEach(k => {
-            if (k.startsWith('teams_creds')) {
-                sel.innerHTML += `<option value="${k}">${k} (${config[k].email || 'No email'})</option>`;
+            if (config[k] && config[k].email) {
+                sel.innerHTML += `<option value="${k}">${k} (${config[k].email})</option>`;
             }
         });
         if (sel.innerHTML === '') {
