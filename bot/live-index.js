@@ -58,7 +58,7 @@ async function claimNextWaiting() {
   });
   if (!selected) return null;
 
-  const itemRef = db.ref(`queue/${selected.id}`);
+  const itemRef = db.ref(`live_queue/${selected.id}`);
   const currentSnap = await itemRef.once('value');
   const current = currentSnap.val();
   
@@ -81,8 +81,8 @@ async function getCookies(accountId) {
 }
 
 async function processItem(item) {
-  const ref = db.ref(`queue/${item.id}`);
-  const safeName = String(item.title || `class-${item.id}`)
+  const ref = db.ref(`live_queue/${item.id}`);
+  const safeName = String(item.title || `live-${item.id}`)
     .replace(/[^a-z0-9._-]+/gi, '_')
     .slice(0, 80);
   const outputPath = path.join(OUTPUT_DIR, `${Date.now()}-${safeName}.mp4`);
