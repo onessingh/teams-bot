@@ -30,7 +30,8 @@ jobs:
           pulseaudio --start --system=false --exit-idle-time=-1
           pactl load-module module-null-sink sink_name=teams_sink sink_properties=device.description=TeamsCapture
           pactl set-default-sink teams_sink
-          pactl set-default-source teams_sink.monitor
+          pactl load-module module-null-sink sink_name=fake_mic sink_properties=device.description=FakeMic
+          pactl set-default-source fake_mic.monitor
           pactl list short sinks
           pactl list short sources
 

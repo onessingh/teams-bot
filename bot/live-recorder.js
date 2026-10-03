@@ -76,7 +76,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         '--window-position=0,0',
         '--disable-infobars',
         '--use-fake-ui-for-media-stream',
-        '--use-fake-device-for-media-stream'
+        // removed fake device to use pulse fake_mic
       ]
     });
 
@@ -171,19 +171,28 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
 
         // Ensure mic is muted
         try {
-            console.log('[DEBUG] Searching for Mic toggle on prejoin...');
-            await page.evaluate(() => {
+            console.log('[DEBUG] Checking if Mic is ON on prejoin...');
+            const isMicOn = await page.evaluate(() => {
                 const micBtns = Array.from(document.querySelectorAll('*')).filter(el => 
                     (el.getAttribute('data-tid') === 'toggle-mute') ||
                     (el.getAttribute('aria-label') && el.getAttribute('aria-label').toLowerCase().includes('microphone'))
                 );
                 for (let btn of micBtns) {
                     if (btn.getAttribute('aria-checked') === 'true' || btn.getAttribute('data-state') === 'unmuted') {
-                        btn.click();
+                        return true;
+                    }
+                    if (btn.getAttribute('aria-label') && btn.getAttribute('aria-label').toLowerCase().includes('mute') && !btn.getAttribute('aria-label').toLowerCase().includes('unmute')) {
+                        return true; // it says "Mute microphone", meaning it is unmuted
                     }
                 }
+                return false;
             });
-            await page.waitForTimeout(1000);
+            
+            if (isMicOn) {
+                console.log('[DEBUG] Mic is ON! Pressing Ctrl+Shift+M to mute...');
+                await page.keyboard.press('Control+Shift+M');
+                await page.waitForTimeout(1000);
+            }
         } catch(e) {
             console.log('[DEBUG] Mic toggle error on prejoin', e.message);
         }
