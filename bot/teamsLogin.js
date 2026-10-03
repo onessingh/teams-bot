@@ -41,14 +41,24 @@ async function doTeamsLogin(db) {
             // Check if Microsoft asks to email a code instead of password
             try {
                 console.log("Checking if 'Use your password' bypass is needed...");
-                const bypass = page.locator('#idA_PWD_SwitchToPassword, #idA_PWD_SwitchToCredPicker, text=Use your password, text=password').first();
-                if (await bypass.isVisible({ timeout: 5000 })) {
-                    console.log("Found 'Use your password' prompt, clicking it...");
-                    await bypass.click({ force: true });
-                    await page.waitForTimeout(2000);
-                } else {
-                    console.log("Bypass button not visible, proceeding directly to password.");
+                const bypassSelectors = [
+                    '#idA_PWD_SwitchToPassword', 
+                    '#idA_PWD_SwitchToCredPicker', 
+                    'a:has-text("password")', 
+                    'button:has-text("password")'
+                ];
+                let clickedBypass = false;
+                for (const sel of bypassSelectors) {
+                    const bypass = page.locator(sel).first();
+                    if (await bypass.isVisible({ timeout: 2000 }).catch(()=>false)) {
+                        console.log(`Found bypass prompt (${sel}), clicking it...`);
+                        await bypass.click({ force: true });
+                        await page.waitForTimeout(2000);
+                        clickedBypass = true;
+                        break;
+                    }
                 }
+                if (!clickedBypass) console.log("Bypass button not visible, proceeding directly to password.");
             } catch(e) {
                 console.log("Bypass check error:", e.message);
             }
