@@ -36,28 +36,31 @@ async function doTeamsLogin(db) {
         } catch(e) {}
 
         // Password
-        console.log("Waiting for password screen or bypass...");
         try {
-            // Use strict name/id for Microsoft's password field to avoid hidden honey-pot inputs
             const pwdSelector = '#i0118, input[name="passwd"]';
             const bypassSelector = '#idA_PWD_SwitchToPassword, #idA_PWD_SwitchToCredPicker, a:has-text("password"), button:has-text("password")';
 
-            const pwdPromise = page.waitForSelector(pwdSelector, { state: 'visible', timeout: 15000 }).then(() => 'pwd');
-            const bypassPromise = page.waitForSelector(bypassSelector, { state: 'visible', timeout: 15000 }).then(() => 'bypass');
-            
-            const result = await Promise.any([pwdPromise, bypassPromise]);
-            
-            if (result === 'bypass') {
+            console.log("Checking if 'Use your password' bypass is needed (waiting 3s)...");
+            try {
+                const bypass = page.locator(bypassSelector).first();
+                await bypass.waitFor({ state: 'visible', timeout: 3000 });
                 console.log("Found 'Use your password' bypass! Clicking it...");
-                await page.click(bypassSelector, { force: true });
+                await bypass.click({ force: true });
                 await page.waitForTimeout(2000);
-                await page.waitForSelector(pwdSelector, { state: 'visible', timeout: 10000 });
+            } catch(e) {
+                console.log("No bypass button detected. Proceeding directly to password.");
             }
 
+            console.log("Waiting for password field to be ready...");
+            const pwdInput = page.locator(pwdSelector).first();
+            await pwdInput.waitFor({ state: 'visible', timeout: 15000 });
+            
             console.log("Entering password...");
-            await page.locator(pwdSelector).first().pressSequentially(creds.password, { delay: 50 });
+            await pwdInput.focus(); // Force focus just in case
+            await pwdInput.pressSequentially(creds.password, { delay: 50 });
             await page.waitForTimeout(1000);
-            await page.locator(pwdSelector).first().press('Enter');
+            await pwdInput.press('Enter');
+            
             try {
                 await page.click('#idSIButton9, input[type="submit"]', { timeout: 2000, force: true });
             } catch(e) {}
