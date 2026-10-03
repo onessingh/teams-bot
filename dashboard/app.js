@@ -343,6 +343,10 @@ liveAddBtn.addEventListener('click', async () => {
     const url = liveLinkInput.value.trim();
     if (!url) return alert('Please paste a valid Teams Live Meeting link!');
     
+    const timeStr = document.getElementById('live-schedule-time')?.value;
+    let scheduledTime = 0;
+    if (timeStr) scheduledTime = new Date(timeStr).getTime();
+    
     liveAddBtn.disabled = true;
     liveAddBtn.innerText = 'Adding...';
     
@@ -352,9 +356,13 @@ liveAddBtn.addEventListener('click', async () => {
             title: 'Live Class: ' + new Date().toLocaleString(),
             status: 'WAITING',
             addedAt: Date.now(),
+            scheduledTime: scheduledTime,
             accountId: liveAccountSelect.value
         });
         liveLinkInput.value = '';
+        if (scheduledTime > 0 && typeof updateGitHubLiveCron === 'function') {
+            await updateGitHubLiveCron();
+        }
     } catch (e) {
         alert('Error: ' + e.message);
     }
@@ -492,3 +500,58 @@ onValue(ref(db, 'config'), (snap) => {
         }
     }
 });
+
+async function updateGitHubLiveCron() {
+    try {
+        const snap = await get(ref(db, 'live_queue'));
+        const queue = snap.val() || {};
+        const crons = [];
+        Object.values(queue).forEach(item => {
+            if (item.status === 'WAITING' && item.scheduledTime) {
+                const d = new Date(item.scheduledTime - 15 * 60 * 1000);
+                const cronStr = `${d.getUTCMinutes()} ${d.getUTCHours()} ${d.getUTCDate()} ${d.getUTCMonth() + 1} *`;
+                if (!crons.includes(cronStr)) crons.push(cronStr);
+            }
+        });
+        
+        if (crons.length === 0) return;
+        
+        let cronYaml = crons.map(c => `    - cron: '${c}'`).join('\n');
+        
+        const yamlContent = `name: Live Schedule Runner\n\non:\n  schedule:\n${cronYaml}\n\njobs:\n  process-live:\n    runs-on: ubuntu-latest\n    steps:\n      - name: Trigger Dispatch\n        uses: peter-evans/repository-dispatch@v3\n        with:\n          token: \${{ secrets.GITHUB_TOKEN }}\n          event-type: start-live-processing\n`;
+
+        const url = 'https://api.github.com/repos/onessingh/teams-bot/contents/.github/workflows/live-bot.yml';
+        const headers = { 'Authorization': 'token ' + GITHUB_TOKEN, 'Accept': 'application/vnd.github.v3+json' };
+        
+        let sha = null;
+        let content = '';
+        try {
+            const getRes = await fetch(url, { headers });
+            if (getRes.ok) {
+                const data = await getRes.json();
+                sha = data.sha;
+                content = atob(data.content);
+            }
+        } catch(e) {}
+        
+        if (!content) return;
+        
+        // Remove existing schedule block if any
+        content = content.replace(/\\n\\s*schedule:\\n(\\s*- cron: .*\\n)+/, '');
+        
+        // Inject new schedule block
+        const scheduleBlock = `\n  schedule:\n${cronYaml}`;
+        content = content.replace('on:\n', 'on:' + scheduleBlock + '\n');
+        
+        const body = {
+            message: 'Update dynamic live schedule',
+            content: btoa(content),
+            sha: sha
+        };
+        
+        await fetch(url, { method: 'PUT', headers, body: JSON.stringify(body) });
+        console.log('GitHub Cron updated with', crons.length, 'schedules.');
+    } catch(e) {
+        console.error('Failed to update GH cron', e);
+    }
+}
