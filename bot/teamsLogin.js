@@ -26,20 +26,30 @@ async function doTeamsLogin(db) {
         await page.goto('https://teams.microsoft.com');
 
         // Email
+        console.log("Typing email...");
         await page.waitForSelector('input[type="email"]');
         await page.locator('input[type="email"]').pressSequentially(creds.email, { delay: 50 });
         await page.waitForTimeout(1000); 
-        await page.keyboard.press('Enter');
-        await page.waitForTimeout(3000); // Give it time to transition to password screen
+        await page.locator('input[type="email"]').press('Enter');
+        try {
+            await page.click('input[type="submit"]', { timeout: 2000 });
+        } catch(e) {}
 
         // Password
+        console.log("Waiting for password screen...");
         try {
             await page.waitForSelector('input[type="password"]', { timeout: 15000 });
             await page.locator('input[type="password"]').pressSequentially(creds.password, { delay: 50 });
             await page.waitForTimeout(1000);
-            await page.keyboard.press('Enter');
+            await page.locator('input[type="password"]').press('Enter');
+            try {
+                await page.click('input[type="submit"]', { timeout: 2000 });
+            } catch(e) {}
         } catch(e) {
-            console.log("Password field not found, maybe passwordless or straight to MFA?", e.message);
+            console.log("Password field not found. Saving screenshot for debugging.");
+            const errImg = await page.screenshot({ fullPage: true });
+            await db.ref('state/mfa_screenshot').set("data:image/png;base64," + errImg.toString('base64'));
+            throw new Error("Password field not found. Check dashboard for screenshot of what Microsoft is asking.");
         }
 
         // Check for MFA screen (e.g. Authenticator App prompt)
@@ -48,14 +58,12 @@ async function doTeamsLogin(db) {
             await page.waitForSelector('#idRemoteNGC_DisplaySign', { timeout: 5000 });
             console.log("MFA Prompt detected!");
             
-            // Take a screenshot of the number to approve
             const screenshotBuffer = await page.screenshot({ fullPage: false });
             const base64Image = "data:image/png;base64," + screenshotBuffer.toString('base64');
             
             await db.ref('state/mfa_screenshot').set(base64Image);
             await db.ref('state/login_status').set('WAITING_FOR_MFA');
 
-            // Wait for user to approve on their phone and the page to navigate away
             await page.waitForNavigation({ timeout: 60000 * 2 }); // wait up to 2 mins for approval
         } catch (e) {
             console.log("No MFA prompt or it auto-progressed.");
@@ -64,12 +72,14 @@ async function doTeamsLogin(db) {
         // 'Stay signed in?' prompt
         try {
             await page.waitForSelector('input[id="idBtn_Back"]', { timeout: 5000 });
-            await page.click('input[id="idBtn_Back"]'); // click "No" to stay signed in (doesn't matter for cookies)
+            await page.click('input[id="idBtn_Back"]'); // click "No"
         } catch(e) {}
 
-        // Wait for Teams web app to load
-        await page.waitForSelector('div[data-tid="team-channel-list"]', { timeout: 30000 }).catch(() => {});
-
+        console.log("Validating successful login...");
+        // Ensure we are not still on the login page
+        const isStillLogin = await page.locator('input[type="email"]').isVisible().catch(()=>false);
+        if (isStillLogin) throw new Error("Stuck on email page. Incorrect email?");
+        
         console.log("Login seems successful, extracting cookies...");
         const cookies = await context.cookies();
         
