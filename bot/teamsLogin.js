@@ -124,7 +124,7 @@ async function doTeamsLogin(db) {
         console.log("Login seems successful, extracting cookies...");
         const cookies = await context.cookies();
         
-        await db.ref('config/teams_cookies').set(cookies);
+        await db.ref(`config/${targetKey}`).update({ cookies: cookies });
         await db.ref('state/login_status').set('SUCCESS');
         console.log("Cookies saved to Firebase!");
 
