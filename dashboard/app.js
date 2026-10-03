@@ -502,16 +502,21 @@ setInterval(() => {
 onValue(ref(db, 'config'), (snap) => {
     const config = snap.val();
     const sel = document.getElementById('live-account');
-    if (sel && config) {
-        sel.innerHTML = '';
+    const recSel = document.getElementById('recorded-account');
+    
+    if (config) {
+        let optionsHtml = '';
         Object.keys(config).forEach(k => {
             if (config[k] && config[k].email) {
-                sel.innerHTML += `<option value="${k}">${k} (${config[k].email})</option>`;
+                optionsHtml += `<option value="${k}">${k} (${config[k].email})</option>`;
             }
         });
-        if (sel.innerHTML === '') {
-            sel.innerHTML = '<option value="teams_creds">Default Account</option>';
+        if (optionsHtml === '') {
+            optionsHtml = '<option value="teams_creds">Default Account</option>';
         }
+        
+        if (sel) sel.innerHTML = optionsHtml;
+        if (recSel) recSel.innerHTML = optionsHtml;
     }
 });
 
