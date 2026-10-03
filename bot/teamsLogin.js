@@ -38,16 +38,16 @@ async function doTeamsLogin(db) {
         // Password
         console.log("Waiting for password screen or bypass...");
         try {
-            // Wait up to 15 seconds for EITHER the password field OR the text "Use your password"
-            const pwOrBypass = await page.waitForSelector('input[type="password"], :text-matches("Use your password", "i"), :text-matches("Use password", "i")', { timeout: 15000 });
+            const pwdPromise = page.waitForSelector('input[type="password"]', { state: 'visible', timeout: 15000 }).then(() => 'pwd');
+            const bypassPromise = page.waitForSelector('#idA_PWD_SwitchToPassword, #idA_PWD_SwitchToCredPicker, a:has-text("password"), button:has-text("password")', { state: 'visible', timeout: 15000 }).then(() => 'bypass');
             
-            const isBypass = await page.evaluate(el => el.tagName.toLowerCase() !== 'input' && !el.type, pwOrBypass);
+            const result = await Promise.any([pwdPromise, bypassPromise]);
             
-            if (isBypass) {
+            if (result === 'bypass') {
                 console.log("Found 'Use your password' bypass! Clicking it...");
-                await pwOrBypass.click({ force: true });
+                await page.click('#idA_PWD_SwitchToPassword, #idA_PWD_SwitchToCredPicker, a:has-text("password"), button:has-text("password")', { force: true });
                 await page.waitForTimeout(2000);
-                await page.waitForSelector('input[type="password"]', { timeout: 10000 });
+                await page.waitForSelector('input[type="password"]', { state: 'visible', timeout: 10000 });
             }
 
             console.log("Entering password...");
