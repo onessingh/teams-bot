@@ -112,8 +112,10 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         await page.waitForSelector('button[data-tid="prejoin-join-button"]', { timeout: 30000 });
         console.log('[DEBUG] Pre-join screen loaded.');
         
+        await page.waitForTimeout(3000); // Give toggles time to initialize state
+        
         // Ensure mic is muted (aria-checked="true" means it's ON)
-        const micToggle = page.locator('div[data-tid="toggle-mute"]');
+        const micToggle = page.locator('[data-tid="toggle-mute"]');
         if (await micToggle.isVisible()) {
             const isMicOn = await micToggle.getAttribute('aria-checked');
             if (isMicOn === 'true') {
@@ -123,7 +125,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         }
 
         // Ensure camera is off
-        const camToggle = page.locator('div[data-tid="toggle-video"]');
+        const camToggle = page.locator('[data-tid="toggle-video"]');
         if (await camToggle.isVisible()) {
             const isCamOn = await camToggle.getAttribute('aria-checked');
             if (isCamOn === 'true') {
@@ -139,6 +141,17 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     }
 
     await page.waitForTimeout(10000);
+
+    // Double check mic is muted inside the meeting
+    try {
+        const inMeetingMic = page.locator('[data-tid="toggle-mute"]');
+        if (await inMeetingMic.isVisible({ timeout: 5000 })) {
+            if (await inMeetingMic.getAttribute('aria-checked') === 'true') {
+                console.log('[DEBUG] Mic was left ON in meeting, turning it OFF now!');
+                await inMeetingMic.click();
+            }
+        }
+    } catch(e) {}
 
     // Open Roster / Participants to monitor Organizer
     try {
