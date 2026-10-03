@@ -26,7 +26,7 @@ async function startRecorder(outputPath, durationSeconds) {
     '-c:v', 'libx264',
     '-preset', process.env.FFMPEG_PRESET || 'veryfast',
     '-crf', process.env.FFMPEG_CRF || '23',
-    '-vf', 'crop=1280:720:0:85',
+    '-vf', 'crop=892:628:68:176',
     '-pix_fmt', 'yuv420p',
     '-c:a', 'aac',
     '-b:a', process.env.FFMPEG_AUDIO_BITRATE || '128k',
