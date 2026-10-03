@@ -42,13 +42,33 @@ async function doTeamsLogin(db) {
 
             console.log("Checking if 'Use your password' bypass is needed (waiting 3s)...");
             try {
-                const bypass = page.locator(bypassSelector).first();
-                await bypass.waitFor({ state: 'visible', timeout: 3000 });
-                console.log("Found 'Use your password' bypass! Clicking it...");
-                await bypass.click({ force: true });
-                await page.waitForTimeout(2000);
+                let bypass = page.locator('#idA_PWD_SwitchToPassword, #idA_PWD_SwitchToCredPicker').first();
+                
+                // Wait up to 3 seconds for the ID-based buttons
+                let isBypassVisible = false;
+                try {
+                    await bypass.waitFor({ state: 'visible', timeout: 3000 });
+                    isBypassVisible = true;
+                } catch(e) {}
+                
+                // Fallback: Use Playwright's native getByText to find ANY element with the text (div, span, a, etc)
+                if (!isBypassVisible) {
+                    bypass = page.getByText('Use your password', { exact: false }).first();
+                    try {
+                        await bypass.waitFor({ state: 'visible', timeout: 1000 });
+                        isBypassVisible = true;
+                    } catch(e) {}
+                }
+
+                if (isBypassVisible) {
+                    console.log("Found 'Use your password' bypass! Clicking it...");
+                    await bypass.click({ force: true });
+                    await page.waitForTimeout(2000);
+                } else {
+                    console.log("No bypass button detected. Proceeding directly to password.");
+                }
             } catch(e) {
-                console.log("No bypass button detected. Proceeding directly to password.");
+                console.log("Bypass check error:", e.message);
             }
 
             console.log("Waiting for password field to be ready...");
