@@ -7,7 +7,9 @@ async function doTeamsLogin(db) {
     // Update status
     await db.ref('state/login_status').set('IN_PROGRESS');
 
-    const credsSnap = await db.ref('config/teams_creds').once('value');
+    const targetSnap = await db.ref('state/login_target').once('value');
+    const targetKey = targetSnap.val() || 'teams_creds';
+    const credsSnap = await db.ref('config/' + targetKey).once('value');
     const creds = credsSnap.val();
     
     if (!creds || !creds.email || !creds.password) {
@@ -81,3 +83,4 @@ async function doTeamsLogin(db) {
 }
 
 module.exports = { doTeamsLogin };
+

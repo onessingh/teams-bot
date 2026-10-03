@@ -70,12 +70,15 @@ async function claimNextWaiting() {
   return null;
 }
 
-async function getCookies() {
-  const snap = await db.ref('config/teams_cookies').once('value');
-  const cookies = snap.val();
-  if (!Array.isArray(cookies) || !cookies.length) {
-    throw new Error('No Teams session cookies found. Please login from the dashboard first.');
+async function getCookies(accountId) {
+  const target = accountId && accountId !== 'default' ? accountId : 'teams_creds';
+  const snap = await db.ref('config/' + target).once('value');
+  const creds = snap.val();
+  if (!creds || !Array.isArray(creds.cookies) || !creds.cookies.length) {
+    throw new Error('No Teams session cookies found for ' + target + '. Please login from the dashboard first.');
   }
+  return creds.cookies;
+}
   return cookies;
 }
 
@@ -88,8 +91,9 @@ async function processItem(item) {
 
   try {
     await ref.update({ status: 'OPENING_RECORDING', updatedAt: Date.now() });
-    const cookies = await getCookies();
-    const credsSnap = await db.ref('config/teams_creds').once('value');
+    const cookies = await getCookies(item.accountId);
+    const target = item.accountId || 'teams_creds';
+    const credsSnap = await db.ref('config/' + target).once('value');
     const creds = credsSnap.val();
 
     await ref.update({ status: 'RECORDING', updatedAt: Date.now() });
@@ -174,5 +178,7 @@ start().catch(error => {
   console.error("Fatal error in worker:", error);
   process.exit(1);
 });
+
+
 
 

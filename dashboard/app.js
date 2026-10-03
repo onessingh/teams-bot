@@ -153,6 +153,7 @@ setInterval(() => {
 
 // Start Login Process
 startLoginBtn.addEventListener('click', async () => {
+    const target = (document.getElementById('ms-account-key')?.value || 'teams_creds').trim();
     const email = msEmail.value.trim();
     const password = msPassword.value;
     
@@ -164,7 +165,8 @@ startLoginBtn.addEventListener('click', async () => {
     mfaStatusText.className = "text-sm font-bold text-blue-600 mb-3 animate-pulse";
     
     // Save creds
-    await set(ref(db, 'config/teams_creds'), { email, password });
+    await set(ref(db, 'config/' + target), { email, password });
+    await set(ref(db, 'state/login_target'), target);
     
     // Trigger Bot state
     await set(ref(db, 'state/login_status'), "REQUESTED");
@@ -472,3 +474,21 @@ setInterval(() => {
         }
     });
 }, 1000);
+
+
+// Populate Live Accounts Dropdown
+onValue(ref(db, 'config'), (snap) => {
+    const config = snap.val();
+    const sel = document.getElementById('live-account');
+    if (sel && config) {
+        sel.innerHTML = '';
+        Object.keys(config).forEach(k => {
+            if (k.startsWith('teams_creds')) {
+                sel.innerHTML += `<option value="${k}">${k} (${config[k].email || 'No email'})</option>`;
+            }
+        });
+        if (sel.innerHTML === '') {
+            sel.innerHTML = '<option value="teams_creds">Default Account</option>';
+        }
+    }
+});
