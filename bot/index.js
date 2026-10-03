@@ -71,13 +71,22 @@ async function claimNextWaiting() {
 }
 
 async function getCookies(accountId) {
-  const targetKey = accountId ? accountId : 'teams_cookies';
+  const targetKey = accountId && accountId !== 'default' ? accountId : 'teams_creds';
   const snap = await db.ref('config/' + targetKey).once('value');
-  const cookies = snap.val();
-  if (!Array.isArray(cookies) || !cookies.length) {
-    throw new Error('No Teams session cookies found. Please login from the dashboard first.');
+  const creds = snap.val();
+  
+  // Legacy support for 'teams_cookies' if 'teams_creds' doesn't have it
+  if (!creds || !Array.isArray(creds.cookies) || !creds.cookies.length) {
+      if (targetKey === 'teams_creds') {
+          const oldSnap = await db.ref('config/teams_cookies').once('value');
+          const oldCookies = oldSnap.val();
+          if (Array.isArray(oldCookies) && oldCookies.length) {
+              return oldCookies;
+          }
+      }
+      throw new Error(`No Teams session cookies found for account '${targetKey}'. Please login from the dashboard first.`);
   }
-  return cookies;
+  return creds.cookies;
 }
 
 async function processItem(item) {
@@ -90,7 +99,8 @@ async function processItem(item) {
   try {
     await ref.update({ status: 'OPENING_RECORDING', updatedAt: Date.now() });
     const cookies = await getCookies(item.accountId);
-    const credsSnap = await db.ref('config/teams_creds').once('value');
+    const targetKey = item.accountId && item.accountId !== 'default' ? item.accountId : 'teams_creds';
+    const credsSnap = await db.ref('config/' + targetKey).once('value');
     const creds = credsSnap.val();
 
     await ref.update({ status: 'RECORDING', updatedAt: Date.now() });
