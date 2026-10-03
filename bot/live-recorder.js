@@ -449,15 +449,15 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         
         // Mass Exodus Detection (Class is over when 75% of people leave)
         // Wait at least 10 minutes (40 loops * 15s = 600s) before enforcing this rule
-        if (loopCount > 40 && maxParticipants > 5) {
-            if (currentCount <= Math.ceil(maxParticipants * 0.25)) {
+        if (loopCount > 20 && maxParticipants > 5) {
+            if (currentCount <= Math.ceil(maxParticipants * 0.60)) {
                 console.log(`[DEBUG] Mass exodus detected. Max was ${maxParticipants}, now ${currentCount}. Ending meeting.`);
                 meetingEnded = true;
             }
         }
         
         // If max was very small (e.g. 2-5 people), exit if we drop to 2 or fewer and we waited 10 mins
-        if (loopCount > 40 && maxParticipants > 1 && maxParticipants <= 5) {
+        if (loopCount > 20 && maxParticipants > 1 && maxParticipants <= 5) {
             if (currentCount <= 2) {
                  console.log(`[DEBUG] Small meeting drop detected. Max was ${maxParticipants}, now ${currentCount}. Ending meeting.`);
                  meetingEnded = true;
