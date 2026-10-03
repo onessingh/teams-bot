@@ -28,14 +28,19 @@ async function doTeamsLogin(db) {
         // Email
         await page.waitForSelector('input[type="email"]');
         await page.locator('input[type="email"]').pressSequentially(creds.email, { delay: 50 });
-        await page.waitForTimeout(1000); // Give Microsoft JS time to enable the button
-        await page.click('input[type="submit"]');
+        await page.waitForTimeout(1000); 
+        await page.keyboard.press('Enter');
+        await page.waitForTimeout(3000); // Give it time to transition to password screen
 
         // Password
-        await page.waitForSelector('input[type="password"]', { timeout: 15000 });
-        await page.locator('input[type="password"]').pressSequentially(creds.password, { delay: 50 });
-        await page.waitForTimeout(1000);
-        await page.click('input[type="submit"]');
+        try {
+            await page.waitForSelector('input[type="password"]', { timeout: 15000 });
+            await page.locator('input[type="password"]').pressSequentially(creds.password, { delay: 50 });
+            await page.waitForTimeout(1000);
+            await page.keyboard.press('Enter');
+        } catch(e) {
+            console.log("Password field not found, maybe passwordless or straight to MFA?", e.message);
+        }
 
         // Check for MFA screen (e.g. Authenticator App prompt)
         console.log("Checking for MFA...");
