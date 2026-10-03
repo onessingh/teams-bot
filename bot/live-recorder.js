@@ -277,7 +277,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         try {
           await frame.evaluate(() => {
             const style = document.createElement('style');
-            style.innerHTML = * { cursor: none !important; };
+            style.innerHTML = "* { cursor: none !important; }";
             document.head.appendChild(style);
 
             setInterval(() => {
