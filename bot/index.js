@@ -70,8 +70,9 @@ async function claimNextWaiting() {
   return null;
 }
 
-async function getCookies() {
-  const snap = await db.ref('config/teams_cookies').once('value');
+async function getCookies(accountId) {
+  const targetKey = accountId ? accountId : 'teams_cookies';
+  const snap = await db.ref('config/' + targetKey).once('value');
   const cookies = snap.val();
   if (!Array.isArray(cookies) || !cookies.length) {
     throw new Error('No Teams session cookies found. Please login from the dashboard first.');
@@ -88,7 +89,7 @@ async function processItem(item) {
 
   try {
     await ref.update({ status: 'OPENING_RECORDING', updatedAt: Date.now() });
-    const cookies = await getCookies();
+    const cookies = await getCookies(item.accountId);
     const credsSnap = await db.ref('config/teams_creds').once('value');
     const creds = credsSnap.val();
 
