@@ -32,7 +32,7 @@ async function doTeamsLogin(db) {
         await page.waitForTimeout(1000); 
         await page.locator('input[type="email"]').press('Enter');
         try {
-            await page.click('input[type="submit"]', { timeout: 2000 });
+            await page.click('#idSIButton9, input[type="submit"]', { timeout: 2000, force: true });
         } catch(e) {}
 
         // Password
@@ -43,12 +43,13 @@ async function doTeamsLogin(db) {
             await page.waitForTimeout(1000);
             await page.locator('input[type="password"]').press('Enter');
             try {
-                await page.click('input[type="submit"]', { timeout: 2000 });
+                await page.click('#idSIButton9, input[type="submit"]', { timeout: 2000, force: true });
             } catch(e) {}
         } catch(e) {
             console.log("Password field not found. Saving screenshot for debugging.");
-            const errImg = await page.screenshot({ fullPage: true });
-            await db.ref('state/mfa_screenshot').set("data:image/png;base64," + errImg.toString('base64'));
+            const errImg = await page.screenshot({ type: 'jpeg', quality: 50, fullPage: true });
+            await db.ref('state/mfa_screenshot').set("data:image/jpeg;base64," + errImg.toString('base64'));
+            await page.waitForTimeout(3000); // Wait 3s to ensure Firebase finishes uploading the image!
             throw new Error("Password field not found. Check dashboard for screenshot of what Microsoft is asking.");
         }
 
