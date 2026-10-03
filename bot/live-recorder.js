@@ -169,34 +169,42 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             }
         } catch (e) {}
 
-        // Ensure mic is muted (aria-checked="true" means it's ON)
+        // Ensure mic is muted
         try {
-            const micToggle = page.locator('[data-tid="toggle-mute"]');
-            if (await micToggle.isVisible({ timeout: 2000 })) {
-                const isMicOn = await micToggle.getAttribute('aria-checked');
-                if (isMicOn === 'true') {
-                    console.log('[DEBUG] Muting Microphone before joining...');
-                    await micToggle.click({ force: true });
-                    await page.waitForTimeout(1000);
+            console.log('[DEBUG] Searching for Mic toggle on prejoin...');
+            await page.evaluate(() => {
+                const micBtns = Array.from(document.querySelectorAll('*')).filter(el => 
+                    (el.getAttribute('data-tid') === 'toggle-mute') ||
+                    (el.getAttribute('aria-label') && el.getAttribute('aria-label').toLowerCase().includes('microphone'))
+                );
+                for (let btn of micBtns) {
+                    if (btn.getAttribute('aria-checked') === 'true' || btn.getAttribute('data-state') === 'unmuted') {
+                        btn.click();
+                    }
                 }
-            }
+            });
+            await page.waitForTimeout(1000);
         } catch(e) {
-            console.log('[DEBUG] Mic toggle not found on prejoin');
+            console.log('[DEBUG] Mic toggle error on prejoin', e.message);
         }
 
         // Ensure camera is off
         try {
-            const camToggle = page.locator('[data-tid="toggle-video"]');
-            if (await camToggle.isVisible({ timeout: 2000 })) {
-                const isCamOn = await camToggle.getAttribute('aria-checked');
-                if (isCamOn === 'true') {
-                    console.log('[DEBUG] Turning off Camera before joining...');
-                    await camToggle.click({ force: true });
-                    await page.waitForTimeout(1000);
+            console.log('[DEBUG] Searching for Camera toggle on prejoin...');
+            await page.evaluate(() => {
+                const camBtns = Array.from(document.querySelectorAll('*')).filter(el => 
+                    (el.getAttribute('data-tid') === 'toggle-video') ||
+                    (el.getAttribute('aria-label') && (el.getAttribute('aria-label').toLowerCase().includes('camera') || el.getAttribute('aria-label').toLowerCase().includes('video')))
+                );
+                for (let btn of camBtns) {
+                    if (btn.getAttribute('aria-checked') === 'true' || btn.getAttribute('data-state') === 'unmuted') {
+                        btn.click();
+                    }
                 }
-            }
+            });
+            await page.waitForTimeout(1000);
         } catch(e) {
-            console.log('[DEBUG] Cam toggle not found on prejoin');
+            console.log('[DEBUG] Cam toggle error on prejoin', e.message);
         }
 
         console.log('[DEBUG] Clicking "Join now"');
@@ -289,13 +297,15 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             if (text.includes("The meeting has ended") || text.includes("was ended") || text.includes("You've left the meeting")) {
                 return true;
             }
-            // Smart Organizer Detection: Check if "Organizer" or "Presenter" group is missing from the list
-            const roster = document.querySelector('[data-tid="roster-participant-list"]');
-            if (roster && text.includes("Attendees")) {
-                if (!text.includes("Organizer") && !text.includes("Presenter")) {
-                    // Organizer and Presenters have left, only attendees remain
-                    return true;
-                }
+            // Check if bot is completely alone
+            if (text.includes("In this meeting (1)") || text.includes("Waiting for others to join")) {
+                return true;
+            }
+            
+            // Smart Organizer Detection:
+            // If the participant list is open (we see "In this meeting") but there is NO "Organizer" text anywhere on the screen
+            if (text.includes("In this meeting") && !text.includes("Organizer")) {
+                return true;
             }
             return false;
         });
