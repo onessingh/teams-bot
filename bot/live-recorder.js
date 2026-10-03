@@ -98,7 +98,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
 
     // 1. Bypass "How do you want to join your Teams meeting?"
     try {
-        const joinOnWeb = page.locator('button[data-tid="joinOnWeb"], [data-tid="joinOnWeb"]');
+        const joinOnWeb = page.locator('button[data-tid="joinOnWeb"], [data-tid="joinOnWeb"], button:has-text("Continue on this browser")').first();
         if (await joinOnWeb.isVisible({ timeout: 10000 })) {
             console.log('[DEBUG] Clicking "Continue on this browser"');
             await joinOnWeb.click();
@@ -109,11 +109,21 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     // 2. Pre-join screen (Turn off Mic/Cam, Click Join Now)
     try {
         // Wait for pre-join screen to load
-        await page.waitForSelector('button[data-tid="prejoin-join-button"]', { timeout: 30000 });
+        await page.waitForSelector('button[data-tid="prejoin-join-button"], button[data-tid="join-button"], button:has-text("Join now")', { timeout: 30000 });
         console.log('[DEBUG] Pre-join screen loaded.');
         
         await page.waitForTimeout(3000); // Give toggles time to initialize state
         
+        // If cookies are invalid, Teams might ask for a guest name before enabling the Join button
+        try {
+            const nameInput = page.locator('input[data-tid="prejoin-display-name-input"]');
+            if (await nameInput.isVisible({ timeout: 2000 })) {
+                console.log('[DEBUG] Guest name input found. Typing name to enable Join button...');
+                await nameInput.fill('Class Bot');
+                await page.waitForTimeout(1000);
+            }
+        } catch (e) {}
+
         // Ensure mic is muted (aria-checked="true" means it's ON)
         const micToggle = page.locator('[data-tid="toggle-mute"]');
         if (await micToggle.isVisible()) {
@@ -135,7 +145,8 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         }
 
         console.log('[DEBUG] Clicking "Join now"');
-        await page.locator('button[data-tid="prejoin-join-button"]').click();
+        const joinBtn = page.locator('button[data-tid="prejoin-join-button"], button[data-tid="join-button"], button:has-text("Join now")').first();
+        await joinBtn.click({ timeout: 10000 });
     } catch(e) {
         console.log('[DEBUG] Pre-join button not found, maybe already joined or login blocked.', e.message);
     }
