@@ -26,7 +26,7 @@ async function startRecorder(outputPath, durationSeconds) {
     '-c:v', 'libx264',
     '-preset', process.env.FFMPEG_PRESET || 'veryfast',
     '-crf', process.env.FFMPEG_CRF || '23',
-    '-vf', 'crop=820:560:76:200',
+    '-vf', 'crop=836:560:76:200',
     '-pix_fmt', 'yuv420p',
     '-c:a', 'aac',
     '-b:a', process.env.FFMPEG_AUDIO_BITRATE || '128k',
@@ -400,6 +400,8 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     const startTime = Date.now();
     let loopCount = 0;
     let maxParticipants = 0;
+      const recentCounts = [];
+    const recentCounts = [];
     
     while (Date.now() - startTime < recordMs) {
       await sleep(15000); // Check every 15 seconds
@@ -447,20 +449,23 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             maxParticipants = currentCount;
         }
         
-        // Mass Exodus Detection (Class is over when 75% of people leave)
-        // Wait at least 10 minutes (40 loops * 15s = 600s) before enforcing this rule
-        if (loopCount > 20 && maxParticipants > 5) {
-            if (currentCount <= Math.ceil(maxParticipants * 0.60)) {
-                console.log(`[DEBUG] Mass exodus detected. Max was ${maxParticipants}, now ${currentCount}. Ending meeting.`);
-                meetingEnded = true;
-            }
+        if (currentCount > 0) {
+            recentCounts.push(currentCount);
+            if (recentCounts.length > 8) recentCounts.shift();
         }
-        
-        // If max was very small (e.g. 2-5 people), exit if we drop to 2 or fewer and we waited 10 mins
-        if (loopCount > 20 && maxParticipants > 1 && maxParticipants <= 5) {
-            if (currentCount <= 2) {
-                 console.log(`[DEBUG] Small meeting drop detected. Max was ${maxParticipants}, now ${currentCount}. Ending meeting.`);
-                 meetingEnded = true;
+
+        if (loopCount > 20 && recentCounts.length >= 4) {
+            const recentMax = Math.max(...recentCounts);
+            if (recentMax > 5) {
+                if (currentCount <= Math.ceil(recentMax * 0.60)) {
+                    console.log([DEBUG] Sudden mass exodus detected! Recent max was , now . Ending meeting.);
+                    meetingEnded = true;
+                }
+            } else if (recentMax > 1 && recentMax <= 5) {
+                if (currentCount <= 2 && currentCount < recentMax) {
+                    console.log([DEBUG] Small meeting drop detected! Recent max was , now . Ending meeting.);
+                    meetingEnded = true;
+                }
             }
         }
 
