@@ -79,8 +79,6 @@ async function getCookies(accountId) {
   }
   return creds.cookies;
 }
-  return cookies;
-}
 
 async function processItem(item) {
   const ref = db.ref(`queue/${item.id}`);
