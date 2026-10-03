@@ -101,7 +101,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         const joinOnWeb = page.locator('button[data-tid="joinOnWeb"], [data-tid="joinOnWeb"], button:has-text("Continue on this browser")').first();
         if (await joinOnWeb.isVisible({ timeout: 10000 })) {
             console.log('[DEBUG] Clicking "Continue on this browser"');
-            await joinOnWeb.click();
+            await joinOnWeb.click({ force: true });
             await page.waitForTimeout(5000);
         }
     } catch(e) {}
@@ -130,7 +130,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             const isMicOn = await micToggle.getAttribute('aria-checked');
             if (isMicOn === 'true') {
                 console.log('[DEBUG] Muting Microphone');
-                await micToggle.click();
+                await micToggle.click({ force: true });
             }
         }
 
@@ -140,13 +140,13 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             const isCamOn = await camToggle.getAttribute('aria-checked');
             if (isCamOn === 'true') {
                 console.log('[DEBUG] Turning off Camera');
-                await camToggle.click();
+                await camToggle.click({ force: true });
             }
         }
 
         console.log('[DEBUG] Clicking "Join now"');
         const joinBtn = page.locator('button[data-tid="prejoin-join-button"], button[data-tid="join-button"], button:has-text("Join now")').first();
-        await joinBtn.click({ timeout: 10000 });
+        await joinBtn.click({ timeout: 10000, force: true });
     } catch(e) {
         console.log('[DEBUG] Pre-join button not found, maybe already joined or login blocked.', e.message);
     }
