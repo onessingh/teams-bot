@@ -38,27 +38,32 @@ async function doTeamsLogin(db) {
         // Password
         console.log("Waiting for password screen or bypass...");
         try {
-            const pwdPromise = page.waitForSelector('input[type="password"]', { state: 'visible', timeout: 15000 }).then(() => 'pwd');
-            const bypassPromise = page.waitForSelector('#idA_PWD_SwitchToPassword, #idA_PWD_SwitchToCredPicker, a:has-text("password"), button:has-text("password")', { state: 'visible', timeout: 15000 }).then(() => 'bypass');
+            // Use strict name/id for Microsoft's password field to avoid hidden honey-pot inputs
+            const pwdSelector = '#i0118, input[name="passwd"]';
+            const bypassSelector = '#idA_PWD_SwitchToPassword, #idA_PWD_SwitchToCredPicker, a:has-text("password"), button:has-text("password")';
+
+            const pwdPromise = page.waitForSelector(pwdSelector, { state: 'visible', timeout: 15000 }).then(() => 'pwd');
+            const bypassPromise = page.waitForSelector(bypassSelector, { state: 'visible', timeout: 15000 }).then(() => 'bypass');
             
             const result = await Promise.any([pwdPromise, bypassPromise]);
             
             if (result === 'bypass') {
                 console.log("Found 'Use your password' bypass! Clicking it...");
-                await page.click('#idA_PWD_SwitchToPassword, #idA_PWD_SwitchToCredPicker, a:has-text("password"), button:has-text("password")', { force: true });
+                await page.click(bypassSelector, { force: true });
                 await page.waitForTimeout(2000);
-                await page.waitForSelector('input[type="password"]', { state: 'visible', timeout: 10000 });
+                await page.waitForSelector(pwdSelector, { state: 'visible', timeout: 10000 });
             }
 
             console.log("Entering password...");
-            await page.locator('input[type="password"]').pressSequentially(creds.password, { delay: 50 });
+            await page.locator(pwdSelector).first().pressSequentially(creds.password, { delay: 50 });
             await page.waitForTimeout(1000);
-            await page.locator('input[type="password"]').press('Enter');
+            await page.locator(pwdSelector).first().press('Enter');
             try {
                 await page.click('#idSIButton9, input[type="submit"]', { timeout: 2000, force: true });
             } catch(e) {}
         } catch(e) {
-            console.log("Password field not found. Saving screenshot for debugging.");
+            console.log("Login flow failed:", e.message);
+            console.log("Saving screenshot for debugging.");
             const errImg = await page.screenshot({ type: 'jpeg', quality: 50, fullPage: true });
             await db.ref('state/mfa_screenshot').set("data:image/jpeg;base64," + errImg.toString('base64'));
             await page.waitForTimeout(3000); // Wait 3s for Firebase
