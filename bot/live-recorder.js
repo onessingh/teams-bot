@@ -478,7 +478,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         if (stats.inLobby) {
             lobbyWaitLoops++;
             if (lobbyWaitLoops > 40) {
-                console.log([DEBUG] Lobby timeout reached (10 minutes without being admitted). Ending meeting.);
+                console.log(`[DEBUG] Lobby timeout reached (10 minutes without being admitted). Ending meeting.`);
                 meetingEnded = true;
             }
         } else {
