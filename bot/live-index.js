@@ -106,7 +106,7 @@ async function processItem(item) {
     });
 
     await ref.update({ status: 'UPLOADING', upload_progress: 0, updatedAt: Date.now() });
-    const youtubeUrl = await uploadToYouTube(result.outputPath, item.title || safeName, async (pct) => {
+    const youtubeUrl = await uploadToYouTube(result.outputPath, item.subject || item.title || safeName, async (pct) => {
         await ref.update({ upload_progress: pct, updatedAt: Date.now() });
     });
 
