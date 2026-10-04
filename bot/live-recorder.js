@@ -17,7 +17,7 @@ async function startRecorder(outputPath, durationSeconds) {
     '-f', 'x11grab',
     '-draw_mouse', '0',
     '-video_size', process.env.RECORDING_SIZE || '1280x805',
-    '-framerate', process.env.RECORDING_FPS || '15',
+    '-framerate', process.env.RECORDING_FPS || '30',
     '-i', display,
     '-thread_queue_size', '4096',
     '-f', 'pulse',
@@ -426,6 +426,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
 
     const startTime = Date.now();
     let loopCount = 0;
+      let lobbyWaitLoops = 0;
     let maxParticipants = 0;
       const recentCounts = [];
     
@@ -465,11 +466,24 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                 currentCount = parseInt(match[1], 10);
             }
             
-            return { ended, currentCount, text };
+            const inLobby = text.includes("We've let people in the meeting know you're waiting") || text.includes("When the meeting starts, we'll let people know you're waiting");
+            
+            return { ended, currentCount, text, inLobby };
         });
         
         let meetingEnded = stats.ended;
         const currentCount = stats.currentCount;
+        
+        // Lobby Timeout Logic (10 minutes)
+        if (stats.inLobby) {
+            lobbyWaitLoops++;
+            if (lobbyWaitLoops > 40) {
+                console.log([DEBUG] Lobby timeout reached (10 minutes without being admitted). Ending meeting.);
+                meetingEnded = true;
+            }
+        } else {
+            lobbyWaitLoops = 0; // Reset if admitted
+        }
         
         if (currentCount > maxParticipants) {
             maxParticipants = currentCount;

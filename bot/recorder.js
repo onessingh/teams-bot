@@ -31,7 +31,7 @@ async function startRecorder(outputPath, maxMs) {
     '-f', 'x11grab',
     '-draw_mouse', '0',
     '-video_size', process.env.RECORDING_SIZE || '1280x720',
-    '-framerate', process.env.RECORDING_FPS || '15',
+    '-framerate', process.env.RECORDING_FPS || '30',
     '-i', display,
     '-thread_queue_size', '4096',
     '-f', 'pulse',
