@@ -7,7 +7,7 @@ const MAX_MS = parseInt(process.env.MAX_RECORDING_MS || 18000000, 10);
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-async function startRecorder(outputPath, durationSeconds) {
+async function startRecorder(outputPath, durationSeconds, cropFilter = 'crop=836:560:76:200') {
   const display = process.env.DISPLAY || ':99';
   const pulseSource = process.env.PULSE_CAPTURE_SOURCE || 'teams_sink.monitor';
 
@@ -26,7 +26,7 @@ async function startRecorder(outputPath, durationSeconds) {
     '-c:v', 'libx264',
     '-preset', process.env.FFMPEG_PRESET || 'veryfast',
     '-crf', process.env.FFMPEG_CRF || '23',
-    '-vf', 'crop=836:560:76:200',
+    '-vf', cropFilter,
     '-pix_fmt', 'yuv420p',
     '-c:a', 'aac',
     '-b:a', process.env.FFMPEG_AUDIO_BITRATE || '128k',
@@ -269,31 +269,53 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         }
     } catch (e) {}
 
-    // Try to activate "Hide me" so bot's avatar doesn't take up space
+    // Try to activate "Hide me" and "Full screen" using aggressive locators
     try {
-        const viewBtn = page.locator('button[aria-label="View"], button[name="View"]').first();
-        if (await viewBtn.isVisible({ timeout: 2000 })) {
-            await viewBtn.click();
-            await page.waitForTimeout(1000);
+        console.log('[DEBUG] Searching for View button...');
+        const viewBtn = page.locator('button').filter({ hasText: /^View$/ }).first();
+        const viewBtnFallback = page.locator('button[aria-label*="View"], button[data-tid*="view"]').first();
+        const targetViewBtn = (await viewBtn.isVisible({ timeout: 2000 })) ? viewBtn : viewBtnFallback;
+        
+        if (await targetViewBtn.isVisible({ timeout: 2000 })) {
+            await targetViewBtn.click();
+            console.log('[DEBUG] Clicked View button.');
+            await page.waitForTimeout(1500);
             
-            // Sometimes it's under More options
-            const moreOptionsBtn = page.locator('menuitem[aria-label="More options"], button:has-text("More options")').first();
+            // Full Screen option
+            const fullScreenBtn = page.locator('menuitem, button, div[role="menuitem"]').filter({ hasText: /Full screen/i }).first();
+            if (await fullScreenBtn.isVisible({ timeout: 1000 })) {
+                await fullScreenBtn.click();
+                console.log('[DEBUG] Clicked Full screen.');
+                isNativeFullScreen = true;
+                await page.waitForTimeout(1500);
+                // Click View again because menu closes
+                await targetViewBtn.click();
+                await page.waitForTimeout(1500);
+            }
+            
+            // More options option
+            const moreOptionsBtn = page.locator('menuitem, button, div[role="menuitem"]').filter({ hasText: /More options/i }).first();
             if (await moreOptionsBtn.isVisible({ timeout: 1000 })) {
                 await moreOptionsBtn.click();
-                await page.waitForTimeout(1000);
+                console.log('[DEBUG] Clicked More options.');
+                await page.waitForTimeout(1500);
             }
             
-            const hideMeBtn = page.locator('menuitem[aria-label="Hide me"], button:has-text("Hide me"), div:has-text("Hide me")').last();
+            // Hide me option
+            const hideMeBtn = page.locator('menuitem, button, div[role="menuitem"]').filter({ hasText: /Hide me/i }).first();
             if (await hideMeBtn.isVisible({ timeout: 1000 })) {
                 await hideMeBtn.click();
-                console.log('[DEBUG] Clicked "Hide me" to remove bot avatar from grid.');
+                console.log('[DEBUG] Clicked Hide me to remove bot avatar from grid.');
+            } else {
+                console.log('[DEBUG] Hide me button not found in menu.');
             }
             
-            // Click body to close any remaining menus
-            await page.mouse.click(0, 0);
+            await page.mouse.click(0, 0); // close menu
+        } else {
+            console.log('[DEBUG] View button not found entirely.');
         }
     } catch (e) {
-        console.log('[DEBUG] Could not click Hide me:', e.message);
+        console.log('[DEBUG] Could not click Hide me/Full screen:', e.message);
     }
 
     // Hide UI
@@ -422,13 +444,14 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     // Start FFmpeg
     console.log('🎥 Starting FFmpeg recording for live class...');
     const recordMs = maxMs;
-    ffmpeg = await startRecorder(outputPath, Math.floor(recordMs / 1000));
+    const cropF = isNativeFullScreen ? 'crop=960:720:0:85' : 'crop=836:560:76:200';
+      ffmpeg = await startRecorder(outputPath, Math.floor(recordMs / 1000), cropF);
 
     const startTime = Date.now();
     let loopCount = 0;
       let lobbyWaitLoops = 0;
     let maxParticipants = 0;
-      const recentCounts = [];
+          const recentCounts = [];
     
     while (Date.now() - startTime < recordMs) {
       await sleep(15000); // Check every 15 seconds
