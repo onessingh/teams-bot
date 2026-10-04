@@ -45,6 +45,18 @@
                     class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm">
                 
                 <div class="flex gap-2">
+                    <select id="vod-semester" class="flex-1 px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white">
+                        <option value="">-- Select Semester --</option>
+                        <option value="1">Semester 1</option>
+                        <option value="2">Semester 2</option>
+                        <option value="3">Semester 3</option>
+                        <option value="4">Semester 4</option>
+                    </select>
+                    <select id="vod-subject" class="flex-[2] px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white">
+                        <option value="">-- Select Subject --</option>
+                    </select>
+                </div>
+                <div class="flex gap-2 mt-2">
                     <div class="flex-1 relative max-w-[120px]">
                         <input type="number" id="teams-duration" placeholder="Duration" value="300"
                             class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm">
@@ -82,6 +94,18 @@
                     class="w-full px-4 py-3 rounded-lg border border-red-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none transition-all text-sm">
                 
                 <div class="flex gap-2">
+                    <select id="live-semester" class="flex-1 px-4 py-3 rounded-lg border border-red-300 focus:ring-2 focus:ring-red-500 outline-none text-sm bg-white">
+                        <option value="">-- Select Semester --</option>
+                        <option value="1">Semester 1</option>
+                        <option value="2">Semester 2</option>
+                        <option value="3">Semester 3</option>
+                        <option value="4">Semester 4</option>
+                    </select>
+                    <select id="live-subject" class="flex-[2] px-4 py-3 rounded-lg border border-red-300 focus:ring-2 focus:ring-red-500 outline-none text-sm bg-white">
+                        <option value="">-- Select Subject --</option>
+                    </select>
+                </div>
+                <div class="flex gap-2 mt-2">
                     <div class="flex-1 relative">
                         <input type="datetime-local" id="live-schedule-time" class="w-full px-4 py-3 mb-3 rounded-lg border border-red-300 focus:ring-2 focus:ring-red-500 outline-none transition-all text-sm">
                         <select id="live-account" class="w-full px-4 py-3 rounded-lg border border-red-300 focus:ring-2 focus:ring-red-500 outline-none transition-all text-sm bg-white text-gray-700 appearance-none">
