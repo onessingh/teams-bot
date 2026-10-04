@@ -56,6 +56,7 @@ async function stopRecorder(proc) {
 
 async function recordLiveClass(url, outputPath, cookies, options = {}) {
   const maxMs = options.maxMs || MAX_MS;
+  let isNativeFullScreen = false;
   let browser;
   let ffmpeg;
 
