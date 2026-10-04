@@ -294,22 +294,31 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                 await page.waitForTimeout(1500);
             }
             
-            // More options option
-            const moreOptionsBtn = page.locator('menuitem, button, div[role="menuitem"]').filter({ hasText: /More options/i }).first();
-            if (await moreOptionsBtn.isVisible({ timeout: 1000 })) {
-                await moreOptionsBtn.click();
-                console.log('[DEBUG] Clicked More options.');
-                await page.waitForTimeout(1500);
-            }
+            // Check for Hide me directly
+            const hideMeBtn = page.locator('menuitem, button, div[role="menuitem"], span').filter({ hasText: /Hide me/i }).first();
+            let hideMeClicked = false;
             
-            // Hide me option
-            const hideMeBtn = page.locator('menuitem, button, div[role="menuitem"]').filter({ hasText: /Hide me/i }).first();
             if (await hideMeBtn.isVisible({ timeout: 1000 })) {
                 await hideMeBtn.click();
-                console.log('[DEBUG] Clicked Hide me to remove bot avatar from grid.');
+                console.log('[DEBUG] Clicked Hide me directly.');
+                hideMeClicked = true;
             } else {
-                console.log('[DEBUG] Hide me button not found in menu.');
+                // Try More options option
+                const moreOptionsBtn = page.locator('menuitem, button, div[role="menuitem"]').filter({ hasText: /More options/i }).first();
+                if (await moreOptionsBtn.isVisible({ timeout: 1000 })) {
+                    await moreOptionsBtn.click();
+                    console.log('[DEBUG] Clicked More options.');
+                    await page.waitForTimeout(1500);
+                    
+                    if (await hideMeBtn.isVisible({ timeout: 1000 })) {
+                        await hideMeBtn.click();
+                        console.log('[DEBUG] Clicked Hide me after More options.');
+                        hideMeClicked = true;
+                    }
+                }
             }
+            
+            if (!hideMeClicked) console.log('[DEBUG] Hide me button not found in menu.');
             
             await page.mouse.click(0, 0); // close menu
         } else {
