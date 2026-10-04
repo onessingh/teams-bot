@@ -1,4 +1,4 @@
-const { google } = require('googleapis');
+﻿const { google } = require('googleapis');
 const fs = require('fs');
 
 async function uploadToYouTube(videoPath, subject, onProgress) {
@@ -14,7 +14,7 @@ async function uploadToYouTube(videoPath, subject, onProgress) {
     let itemCount = 0;
     const playlistTitle = subject ? subject.trim() : 'Teams Classes';
 
-    console.log([YouTube] Looking for playlist: \\\`);
+    console.log(`[YouTube] Looking for playlist: ${playlistTitle}`);
     
     // 1. Search for existing playlist
     try {
@@ -29,12 +29,14 @@ async function uploadToYouTube(videoPath, subject, onProgress) {
                 pageToken: nextPageToken
             });
             
-            for (const item of playlistRes.data.items) {
-                if (item.snippet.title.toLowerCase() === playlistTitle.toLowerCase()) {
-                    playlistId = item.id;
-                    itemCount = item.contentDetails.itemCount || 0;
-                    found = true;
-                    break;
+            if (playlistRes.data.items) {
+                for (const item of playlistRes.data.items) {
+                    if (item.snippet.title.toLowerCase() === playlistTitle.toLowerCase()) {
+                        playlistId = item.id;
+                        itemCount = item.contentDetails.itemCount || 0;
+                        found = true;
+                        break;
+                    }
                 }
             }
             
@@ -44,7 +46,7 @@ async function uploadToYouTube(videoPath, subject, onProgress) {
         
         // 2. Create if not exists
         if (!playlistId) {
-            console.log([YouTube] Playlist not found. Creating new playlist: \\\`);
+            console.log(`[YouTube] Playlist not found. Creating new playlist: ${playlistTitle}`);
             const createRes = await youtube.playlists.insert({
                 part: 'snippet,status',
                 requestBody: {
@@ -65,8 +67,8 @@ async function uploadToYouTube(videoPath, subject, onProgress) {
     // 3. Formulate Title (e.g. Physics - Class 4 - 24/05/2026)
     const dateStr = new Date().toLocaleDateString('en-IN');
     const classNum = itemCount + 1;
-    const finalTitle = \ - Class \ - \;
-    console.log([YouTube] Generated Video Title: \\\`);
+    const finalTitle = `${playlistTitle} - Class ${classNum} - ${dateStr}`;
+    console.log(`[YouTube] Generated Video Title: ${finalTitle}`);
 
     // 4. Upload Video
     const fileSize = fs.statSync(videoPath).size;
@@ -88,12 +90,12 @@ async function uploadToYouTube(videoPath, subject, onProgress) {
     });
     
     const videoId = res.data.id;
-    console.log([YouTube] Video uploaded successfully: https://youtu.be/\);
+    console.log(`[YouTube] Video uploaded successfully: https://youtu.be/${videoId}`);
 
     // 5. Add to Playlist
     if (playlistId) {
         try {
-            console.log([YouTube] Adding video to playlist \\\...);
+            console.log(`[YouTube] Adding video to playlist ${playlistTitle}...`);
             await youtube.playlistItems.insert({
                 part: 'snippet',
                 requestBody: {
@@ -109,7 +111,7 @@ async function uploadToYouTube(videoPath, subject, onProgress) {
         }
     }
 
-    return https://youtu.be/\;
+    return `https://youtu.be/${videoId}`;
 }
 
 module.exports = { uploadToYouTube };
