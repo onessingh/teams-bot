@@ -244,15 +244,16 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     let initLobbyWaitLoops = 0;
     let admitted = false;
     while (initLobbyWaitLoops < 120) {
-        const inLobby = await page.evaluate(() => {
-            const txt = document.body.textContent || "";
-            return txt.includes("We've let people in the meeting know you're waiting") || 
-                   txt.includes("When the meeting starts, we'll let people know you're waiting") ||
-                   txt.includes("Someone will let you in soon") ||
-                   txt.includes("Someone in the meeting should let you in soon");
+        const isAdmitted = await page.evaluate(() => {
+            // Check for buttons that only exist inside a real meeting (not in lobby)
+            const chatBtn = document.querySelector('[data-tid="chat-button"], [aria-label*="Chat" i]');
+            const peopleBtn = document.querySelector('[data-tid="roster-button"], [aria-label*="People" i]');
+            const reactBtn = document.querySelector('[data-tid="reactions-button"], [aria-label*="React" i]');
+            const shareBtn = document.querySelector('[data-tid="share-button"], [aria-label*="Share" i]');
+            return !!(chatBtn || peopleBtn || reactBtn || shareBtn);
         });
         
-        if (!inLobby) {
+        if (isAdmitted) {
             admitted = true;
             break;
         }
