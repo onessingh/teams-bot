@@ -547,7 +547,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             const text = document.body.textContent || "";
             let ended = false;
             let currentCount = 0;
-              if (text.includes("The meeting has ended") || text.includes("was ended") || text.includes("You've left the meeting") || text.includes("removed you") || text.includes("You were removed") || text.includes("left the meeting")) {
+              if (text.includes("The meeting has ended") || text.includes("was ended") || text.includes("You've left the meeting") || text.includes("removed you") || text.includes("You were removed") || text.includes("left the meeting") || text.includes("You're disconnected") || text.includes("Reconnecting...") || text.includes("Hang on, we're reconnecting") || (text.includes("Join now") && text.includes("audio"))) {
                   ended = true;
               }
             
