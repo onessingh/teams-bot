@@ -289,13 +289,12 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             await page.keyboard.press('Control+Shift+M');
         }
     } catch(e) {}
-
-    // Open Roster / Participants to monitor Organizer
+    // Open Roster / Participants to monitor count
     try {
-        const rosterBtn = page.locator('button[id="roster-button"], button[aria-label="Participants"]');
+        const rosterBtn = page.locator('button[id="roster-button"], button[aria-label="Participants"], button[aria-label="People"], button[id="people-button"], button:has-text("People")').first();
         if (await rosterBtn.isVisible({ timeout: 5000 })) {
             await rosterBtn.click();
-            console.log('[DEBUG] Opened Participants list.');
+            console.log('[DEBUG] Opened Participants (People) list.');
         }
     } catch (e) {}
 
