@@ -594,12 +594,12 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         if (loopCount > 20 && recentCounts.length >= 4) {
             const recentMax = Math.max(...recentCounts);
             if (recentMax > 5) {
-                if (currentCount <= Math.ceil(recentMax * 0.60)) {
+                if (currentCount > 0 && currentCount <= Math.ceil(recentMax * 0.60)) {
                     console.log(`[DEBUG] Sudden mass exodus detected! Recent max was ${recentMax}, now ${currentCount}. Ending meeting.`);
                     meetingEnded = true;
                 }
             } else if (recentMax > 1 && recentMax <= 5) {
-                if (currentCount <= 2 && currentCount < recentMax) {
+                if (currentCount > 0 && currentCount <= 2 && currentCount < recentMax) {
                     console.log(`[DEBUG] Small meeting drop detected! Recent max was ${recentMax}, now ${currentCount}. Ending meeting.`);
                     meetingEnded = true;
                 }
