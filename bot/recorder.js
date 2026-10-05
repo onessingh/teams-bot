@@ -44,7 +44,7 @@ async function startRecorder(outputPath, maxMs) {
     '-pix_fmt', 'yuv420p',
     '-c:a', 'aac',
     '-b:a', process.env.FFMPEG_AUDIO_BITRATE || '128k', '-ar', '44100', '-ac', '2',
-    '-movflags', '+faststart',
+    '-movflags', 'frag_keyframe+empty_moov',
     outputPath
   ];
 
