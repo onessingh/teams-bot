@@ -29,7 +29,7 @@ async function startRecorder(outputPath, durationSeconds, cropFilter = 'crop=120
     '-vf', cropFilter,
     '-pix_fmt', 'yuv420p',
     '-c:a', 'aac',
-    '-b:a', process.env.FFMPEG_AUDIO_BITRATE || '128k',
+    '-b:a', process.env.FFMPEG_AUDIO_BITRATE || '128k', '-ar', '44100', '-ac', '2',
     '-movflags', '+faststart',
     outputPath
   ];
@@ -519,7 +519,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     // Start FFmpeg
     console.log('🎥 Starting FFmpeg recording for live class...');
     const recordMs = maxMs;
-    const cropF = isNativeFullScreen ? 'crop=1280:720:0:85' : 'crop=1204:604:76:200';
+    const cropF = isNativeFullScreen ? 'crop=1280:720:0:85,scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2' : 'crop=1204:604:76:200,scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2';
       ffmpeg = await startRecorder(outputPath, Math.floor(recordMs / 1000), cropF);
 
     const startTime = Date.now();

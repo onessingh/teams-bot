@@ -40,10 +40,10 @@ async function startRecorder(outputPath, maxMs) {
     '-c:v', 'libx264',
     '-preset', process.env.FFMPEG_PRESET || 'veryfast',
     '-crf', process.env.FFMPEG_CRF || '23',
-    '-vf', 'crop=1280:720:0:85',
+    '-vf', 'crop=1280:720:0:85,scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2',
     '-pix_fmt', 'yuv420p',
     '-c:a', 'aac',
-    '-b:a', process.env.FFMPEG_AUDIO_BITRATE || '128k',
+    '-b:a', process.env.FFMPEG_AUDIO_BITRATE || '128k', '-ar', '44100', '-ac', '2',
     '-movflags', '+faststart',
     outputPath
   ];
