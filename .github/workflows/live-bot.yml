@@ -4,6 +4,8 @@ on:
   repository_dispatch:
     types: [start-live-processing]
   workflow_dispatch:
+  schedule:
+    - cron: '*/10 * * * *'
 
 jobs:
   process-live-class:

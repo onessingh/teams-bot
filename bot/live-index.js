@@ -48,26 +48,33 @@ async function handleLoginRequest() {
 }
 
 async function claimNextWaiting() {
-  const snap = await db.ref('live_queue').orderByChild('addedAt').once('value');
-  let selected = null;
-  snap.forEach(child => {
-    const item = child.val() || {};
-    if (!selected && item.status === 'WAITING' && item.url) {
-      selected = { id: child.key, ...item };
-    }
-  });
-  if (!selected) return null;
-
-  const itemRef = db.ref(`live_queue/${selected.id}`);
-  const currentSnap = await itemRef.once('value');
-  const current = currentSnap.val();
+    const snap = await db.ref('live_queue').orderByChild('addedAt').once('value');
+    let selected = null;
+    const now = Date.now();
+    snap.forEach(child => {
+      const item = child.val() || {};
+      if (!selected && item.status === 'WAITING' && item.url) {
+        if (item.scheduledTime) {
+            if (now >= item.scheduledTime - (15 * 60 * 1000)) {
+                selected = { id: child.key, ...item };
+            }
+        } else {
+            selected = { id: child.key, ...item };
+        }
+      }
+    });
+    if (!selected) return null;
   
-  if (current && current.status === 'WAITING') {
-    await itemRef.update({ status: 'STARTING', startedAt: Date.now(), error: null, run_url: process.env.GITHUB_REPOSITORY && process.env.GITHUB_RUN_ID ? 'https://github.com/' + process.env.GITHUB_REPOSITORY + '/actions/runs/' + process.env.GITHUB_RUN_ID : null });
-    return selected;
-  }
-
-  return null;
+    const itemRef = db.ref(`live_queue/${selected.id}`);
+    const currentSnap = await itemRef.once('value');
+    const current = currentSnap.val();
+    
+    if (current && current.status === 'WAITING') {
+      await itemRef.update({ status: 'STARTING', startedAt: Date.now(), error: null, run_url: process.env.GITHUB_REPOSITORY && process.env.GITHUB_RUN_ID ? 'https://github.com/' + process.env.GITHUB_REPOSITORY + '/actions/runs/' + process.env.GITHUB_RUN_ID : null });
+      return selected;
+    }
+  
+    return null;
 }
 
 async function getCookies(accountId) {
