@@ -441,12 +441,20 @@ onValue(ref(db, 'live_queue'), (snapshot) => {
                     <span class="font-bold text-sm text-gray-800 truncate pr-2" title="${item.title}">${item.title}</span>
                 </div>
                 <div class="mb-1">
-                    <span class="text-[11px] font-black uppercase tracking-wider ${statusColor} shrink-0">${statusText}</span>
+                    <span class="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${statusColor} shrink-0">${statusText}</span>
                 </div>
                 <div class="text-[11px] text-gray-500 flex justify-between items-center pr-8">
-                    <span>Added: ${new Date(item.addedAt).toLocaleString()}</span>
-                </div>
-                <div id="live-elapsed-${item.id}" class="text-xs font-bold text-red-600 mt-2 empty:hidden"></div>
+                      <span>${item.scheduledTime ? 'Scheduled: ' + new Date(item.scheduledTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Added: ' + new Date(item.addedAt).toLocaleString()}</span>
+                  </div>
+                  <div id="live-elapsed-${item.id}" class="text-xs font-bold text-red-600 mt-2 empty:hidden"></div>
+                  ${(item.status === 'RECORDING' && item.live_frame) ? `
+                  <div class="mt-3 relative">
+                      <span class="absolute top-2 left-2 bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1 shadow">
+                          <span class="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span> LIVE PREVIEW
+                      </span>
+                      <img src="${item.live_frame}" class="w-full rounded-lg border border-gray-200 shadow-sm object-cover aspect-video" alt="Live Preview">
+                  </div>
+                  ` : '}
                 ${linkHtml}
             </li>
         `;
@@ -656,4 +664,6 @@ function populateSubjects(semId, subjId) {
 
 populateSubjects('vod-semester', 'vod-subject');
 populateSubjects('live-semester', 'live-subject');
+
+
 
