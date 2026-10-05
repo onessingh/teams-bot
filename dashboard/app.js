@@ -129,7 +129,7 @@ onValue(ref(db, 'queue'), (snapshot) => {
                     <span class="text-[11px] font-black uppercase tracking-wider ${statusColor} shrink-0" id="status-${item.id}">${statusText}</span>
                 </div>
                 <div class="text-[11px] text-gray-500 flex justify-between items-center pr-8">
-                    <span>Added: ${new Date(item.addedAt).toLocaleString()}</span>
+                    <span>${item.scheduledTime ? 'Scheduled: ' + new Date(item.scheduledTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Added: ' + new Date(item.addedAt).toLocaleString()}</span>
                     ${item.maxMs ? `<span class="bg-gray-100 px-2 py-0.5 rounded text-gray-600">⏳ ${(item.maxMs/60000).toFixed(0)}m limit</span>` : ''}
                 </div>
                 <div id="elapsed-${item.id}" class="text-xs font-bold text-red-600 mt-2 empty:hidden"></div>
@@ -414,11 +414,17 @@ onValue(ref(db, 'live_queue'), (snapshot) => {
         }
         
         let statusColor = "bg-gray-100 text-gray-600";
-        if (item.status === 'WAITING') statusColor = "bg-yellow-100 text-yellow-700";
-        if (item.status === 'STARTING') statusColor = "bg-blue-100 text-blue-700";
-        if (item.status === 'RECORDING') statusColor = "bg-red-100 text-red-700 animate-pulse";
-        if (item.status === 'COMPLETED') statusColor = "bg-green-100 text-green-700";
-        if (item.status === 'FAILED' || item.status === 'TEAMS_LOGIN_REQUIRED') statusColor = "bg-red-100 text-red-700";
+          let friendlyStatus = statusText.replace(/_/g, ' ');
+          if (item.status === 'WAITING') statusColor = "bg-yellow-100 text-yellow-700";
+          if (item.status === 'STARTING_BROWSER' || item.status === 'OPENING_RECORDING') statusColor = "bg-purple-100 text-purple-700";
+          if (item.status === 'WAITING_FOR_SCHEDULED_TIME') { statusColor = "bg-blue-100 text-blue-700 animate-pulse"; friendlyStatus = "JOINED EARLY - WAITING"; }
+          if (item.status === 'WAITING_IN_LOBBY') { statusColor = "bg-orange-100 text-orange-700 animate-pulse"; friendlyStatus = "WAITING IN LOBBY"; }
+          if (item.status === 'ADMITTED_PREPARING_UI') { statusColor = "bg-indigo-100 text-indigo-700"; friendlyStatus = "ADMITTED - PREPARING UI"; }
+          if (item.status === 'RECORDING') statusColor = "bg-red-100 text-red-700 animate-pulse";
+          if (item.status === 'UPLOADING') { statusColor = "bg-pink-100 text-pink-700 animate-pulse"; friendlyStatus = "UPLOADING TO YOUTUBE " + (item.upload_progress || 0) + "%"; }
+          if (item.status === 'COMPLETED') statusColor = "bg-green-100 text-green-700";
+          if (item.status === 'FAILED' || item.status === 'TEAMS_LOGIN_REQUIRED') statusColor = "bg-red-100 text-red-700";
+          statusText = friendlyStatus;
         
         const html = `
             <li class="queue-item bg-white p-4 border border-gray-100 rounded-xl shadow-sm relative group">

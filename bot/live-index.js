@@ -107,6 +107,7 @@ async function processItem(item) {
       scheduledTime: item.scheduledTime || 0,
       resumeTime: item.resumeTime || 0,
       creds: creds,
+      onStatus: async (statusStr) => { await ref.update({ status: statusStr, updatedAt: Date.now() }); },
       onAuthError: async (b64Image) => {
         await db.ref('state/mfa_screenshot').set(b64Image);
         await db.ref('state/login_status').set('WAITING_FOR_MFA');

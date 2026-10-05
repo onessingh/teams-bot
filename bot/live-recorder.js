@@ -61,6 +61,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
   let ffmpeg;
 
   try {
+    if (options.onStatus) await options.onStatus('STARTING_BROWSER');
     browser = await chromium.launch({
       headless: false,
       channel: 'chrome',
@@ -236,6 +237,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
 
     // Wait for Lobby to clear BEFORE setting up UI and Recording
     console.log('[DEBUG] Waiting to be admitted from lobby...');
+    if (options.onStatus) await options.onStatus('WAITING_IN_LOBBY');
     let initLobbyWaitLoops = 0;
     let admitted = false;
     while (initLobbyWaitLoops < 120) {
@@ -261,6 +263,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         return;
     }
     console.log('[DEBUG] Admitted to meeting. Setting up UI (Mic, Hide me, Full screen).');
+    if (options.onStatus) await options.onStatus('ADMITTED_PREPARING_UI');
     await page.waitForTimeout(5000); // Give the meeting UI 5 seconds to fully render
 
     // Double check mic is muted inside the meeting
@@ -512,6 +515,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     // Strict Timer Check
     if (options.scheduledTime && Date.now() < options.scheduledTime) {
         const waitMs = options.scheduledTime - Date.now();
+        if (options.onStatus) await options.onStatus('WAITING_FOR_SCHEDULED_TIME');
         console.log(`[DEBUG] Joined early. Waiting ${Math.floor(waitMs/1000)}s until scheduled time to start recording...`);
         await page.waitForTimeout(waitMs);
     }
