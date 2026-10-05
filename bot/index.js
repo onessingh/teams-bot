@@ -63,7 +63,7 @@ async function claimNextWaiting() {
   const current = currentSnap.val();
   
   if (current && current.status === 'WAITING') {
-    await itemRef.update({ status: 'STARTING', startedAt: Date.now(), error: null });
+    await itemRef.update({ status: 'STARTING', startedAt: Date.now(), error: null, run_url: process.env.GITHUB_REPOSITORY && process.env.GITHUB_RUN_ID ? 'https://github.com/' + process.env.GITHUB_REPOSITORY + '/actions/runs/' + process.env.GITHUB_RUN_ID : null });
     return selected;
   }
 
