@@ -454,7 +454,7 @@ onValue(ref(db, 'live_queue'), (snapshot) => {
                       </span>
                       <img src="${item.live_frame}" class="w-full rounded-lg border border-gray-200 shadow-sm object-cover aspect-video" alt="Live Preview">
                   </div>
-                  ` : '}
+                  ` : ''}
                 ${linkHtml}
             </li>
         `;
@@ -687,4 +687,5 @@ setInterval(async () => {
         }
     }
 }, 30000); // Check every 30 seconds
+
 
