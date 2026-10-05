@@ -318,7 +318,28 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
 
     // Try to activate "Hide me" and "Full screen" using aggressive locators
     try {
-        console.log('[DEBUG] Searching for View button...');
+        
+    // Try to expand PiP if stuck in mini-window
+    try {
+        console.log('[DEBUG] Checking if stuck in PiP window...');
+        await page.evaluate(() => {
+            const returnBtns = Array.from(document.querySelectorAll('button')).filter(b => 
+                (b.getAttribute('aria-label') || '').toLowerCase().includes('return to meeting') ||
+                (b.getAttribute('title') || '').toLowerCase().includes('return to meeting') ||
+                (b.getAttribute('aria-label') || '').toLowerCase().includes('back to meeting')
+            );
+            if (returnBtns.length > 0) {
+                returnBtns[0].click();
+            } else {
+                // Try clicking the mini-player container directly
+                const miniPlayer = document.querySelector('[data-tid="calls-pip"], .app-svg'); 
+                if (miniPlayer) miniPlayer.click();
+            }
+        });
+        await page.waitForTimeout(2000);
+    } catch(e) {}
+
+    console.log('[DEBUG] Searching for View button...');
         const viewBtn = page.locator('button').filter({ hasText: /^View$/ }).first();
         const viewBtnFallback = page.locator('button[aria-label*="View"], button[data-tid*="view"]').first();
         const targetViewBtn = (await viewBtn.isVisible({ timeout: 2000 })) ? viewBtn : viewBtnFallback;
