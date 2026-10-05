@@ -357,6 +357,9 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
 
             setInterval(() => {
                 try {
+                    // Remove all title attributes to stop hover tooltips
+                    document.querySelectorAll('[title]').forEach(el => el.removeAttribute('title'));
+
                     // Aggressively dismiss toasts/popups
                     const btns = document.querySelectorAll('button');
                     btns.forEach(btn => {
@@ -473,7 +476,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
       });
 
     } catch(e) {}
-    await page.mouse.move(0, 0);
+    await page.mouse.move(0, 800);
 
     // Start FFmpeg
     console.log('🎥 Starting FFmpeg recording for live class...');
@@ -496,7 +499,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         try {
           await page.mouse.move(100 + Math.random() * 500, 100 + Math.random() * 500);
           await sleep(500);
-          await page.mouse.move(0, 0);
+          await page.mouse.move(0, 800);
         } catch (e) {}
       }
       
