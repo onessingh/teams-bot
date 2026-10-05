@@ -668,24 +668,36 @@ populateSubjects('live-semester', 'live-subject');
 
 
 
-// Auto-Trigger Logic
+// Improved Auto-Trigger with UI Countdown
 setInterval(async () => {
     if (!window.liveQueueItemsData) return;
     const now = Date.now();
     for (const item of window.liveQueueItemsData) {
         if (item.status === 'WAITING' && item.scheduledTime > 0) {
-            // If we are within 20 minutes of the scheduled time
-            if (now >= item.scheduledTime - (20 * 60 * 1000) && now <= item.scheduledTime) {
-                console.log('Auto-triggering live bot for:', item.title);
+            const timeDiff = item.scheduledTime - now;
+            const elId = `live-elapsed-${item.id}`;
+            const elapsedDiv = document.getElementById(elId);
+            
+            // If within 20 mins, trigger
+            if (now >= item.scheduledTime - (20 * 60 * 1000) && now <= item.scheduledTime + (5 * 60 * 1000)) {
+                if (elapsedDiv) elapsedDiv.innerHTML = '<span class="text-blue-600">Auto-triggering now...</span>';
                 const btn = document.getElementById('live-trigger-gh-btn');
-                if (btn && !btn.disabled) {
+                if (btn && !btn.disabled && !window.autoTriggerFired) {
+                    window.autoTriggerFired = true;
                     btn.click();
-                    // Prevent multiple clicks
-                    await new Promise(r => setTimeout(r, 60000));
+                    setTimeout(() => window.autoTriggerFired = false, 60000); // 1 min cooldown
+                }
+            } else if (timeDiff > 0) {
+                // Show countdown if more than 20 mins away
+                const mins = Math.floor(timeDiff / 60000);
+                const triggerMins = mins - 20;
+                if (triggerMins > 0) {
+                    if (elapsedDiv) elapsedDiv.innerHTML = `<span class="text-gray-500">Auto-trigger in ${triggerMins} mins...</span>`;
                 }
             }
         }
     }
-}, 30000); // Check every 30 seconds
+}, 5000); // Check every 5 seconds for responsive UI
+
 
 
