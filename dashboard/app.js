@@ -503,7 +503,7 @@ liveTriggerBtn.addEventListener('click', async () => {
         });
         
         if (response.ok) {
-            alert('Live Bot Cloud Server started successfully! It will join the meeting in ~2 minutes.');
+            liveTriggerBtn.innerHTML = 'Started! Join in 2 mins'; setTimeout(() => { liveTriggerBtn.innerHTML = originalText; liveTriggerBtn.disabled = false; }, 5000);
         } else {
             alert('Failed to start Live Bot Server.');
         }
@@ -698,6 +698,7 @@ setInterval(async () => {
         }
     }
 }, 5000); // Check every 5 seconds for responsive UI
+
 
 
 
