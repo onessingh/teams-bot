@@ -1,4 +1,4 @@
-name: Automation Worker
+name: Live Class Worker
 
 on:
   repository_dispatch:
