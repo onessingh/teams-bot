@@ -383,9 +383,7 @@ liveAddBtn.addEventListener('click', async () => {
             accountId: liveAccountSelect.value
         });
         liveLinkInput.value = '';
-        if (scheduledTime > 0 && typeof updateGitHubLiveCron === 'function') {
-            await updateGitHubLiveCron();
-        }
+        
     } catch (e) {
         alert('Error: ' + e.message);
     }
@@ -658,3 +656,4 @@ function populateSubjects(semId, subjId) {
 
 populateSubjects('vod-semester', 'vod-subject');
 populateSubjects('live-semester', 'live-subject');
+
