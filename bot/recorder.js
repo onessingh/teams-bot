@@ -61,15 +61,19 @@ async function startRecorder(outputPath, maxMs) {
 }
 
 async function stopRecorder(proc) {
-  if (!proc || proc.exitCode !== null) return;
-  proc.kill('SIGINT');
-  await new Promise(resolve => {
-    const timer = setTimeout(() => {
-      try { proc.kill('SIGKILL'); } catch (_) {}
-      resolve();
-    }, 15000);
-    proc.once('close', () => { clearTimeout(timer); resolve(); });
+  return new Promise((resolve) => {
+    if (!proc) return resolve();
+    let resolved = false;
+    const finish = () => { if (!resolved) { resolved = true; resolve(); } };
+    proc.on('close', finish);
+    proc.on('exit', finish);
+    try { proc.kill('SIGINT'); } catch(e){}
+    setTimeout(() => {
+      try { process.kill(proc.pid, 'SIGKILL'); } catch(e){}
+      finish();
+    }, 5000);
   });
+});
 }
 
 async function clickPlay(page) {
@@ -379,7 +383,11 @@ async function recordClass(url, outputPath, cookies, options = {}) {
     return { outputPath, wasSplit, durationRecordedMs: recordMs };
   } finally {
     if (ffmpeg) await stopRecorder(ffmpeg).catch(() => {});
-    if (browser) await browser.close().catch(() => {});
+    if (browser) {
+      const bTimeout = setTimeout(() => { try { browser.process().kill('SIGKILL'); } catch(e){} }, 8000);
+      await browser.close().catch(()=>{});
+      clearTimeout(bTimeout);
+    }
   }
 }
 

@@ -44,12 +44,15 @@ async function startRecorder(outputPath, durationSeconds, cropFilter = 'crop=120
 
 async function stopRecorder(proc) {
   return new Promise((resolve) => {
-    if (!proc || proc.killed) return resolve();
-    proc.on('close', () => resolve());
-    proc.kill('SIGINT');
+    if (!proc) return resolve();
+    let resolved = false;
+    const finish = () => { if (!resolved) { resolved = true; resolve(); } };
+    proc.on('close', finish);
+    proc.on('exit', finish);
+    try { proc.kill('SIGINT'); } catch(e){}
     setTimeout(() => {
-      if (!proc.killed) proc.kill('SIGKILL');
-      resolve();
+      try { process.kill(proc.pid, 'SIGKILL'); } catch(e){}
+      finish();
     }, 5000);
   });
 }
@@ -629,7 +632,11 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     return { outputPath, durationRecordedMs: Date.now() - startTime };
   } finally {
     if (ffmpeg) await stopRecorder(ffmpeg).catch(() => {});
-    if (browser) await browser.close().catch(() => {});
+    if (browser) {
+      const bTimeout = setTimeout(() => { try { browser.process().kill('SIGKILL'); } catch(e){} }, 8000);
+      await browser.close().catch(()=>{});
+      clearTimeout(bTimeout);
+    }
   }
 }
 
