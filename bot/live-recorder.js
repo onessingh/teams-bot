@@ -320,7 +320,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             
             if (!hideMeClicked) console.log('[DEBUG] Hide me button not found in menu.');
             
-            await page.mouse.click(0, 0); // close menu
+            await page.mouse.click(0, 500); // close menu
         } else {
             console.log('[DEBUG] View button not found entirely.');
         }
@@ -345,6 +345,9 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     .ui-toast, 
     .toast-container, 
     .ts-toast-stack,
+    [role="tooltip"],
+    .fui-Tooltip,
+    .ui-tooltip,
     div[aria-label*="notification" i],
     div[aria-live="polite"] {
         display: none !important;
@@ -476,7 +479,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
       });
 
     } catch(e) {}
-    await page.mouse.move(0, 800);
+    await page.mouse.move(0, 800, { steps: 10 });
 
     // Start FFmpeg
     console.log('🎥 Starting FFmpeg recording for live class...');
@@ -499,7 +502,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         try {
           await page.mouse.move(100 + Math.random() * 500, 100 + Math.random() * 500);
           await sleep(500);
-          await page.mouse.move(0, 800);
+          await page.mouse.move(0, 800, { steps: 10 });
         } catch (e) {}
       }
       
