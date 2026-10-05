@@ -72,5 +72,6 @@ jobs:
           path: |
             *.mp4
             bot/downloads/*.mp4
+              recordings/*.mp4
           retention-days: 3
 
