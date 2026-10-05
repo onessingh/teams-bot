@@ -7,7 +7,7 @@ const MAX_MS = parseInt(process.env.MAX_RECORDING_MS || 18000000, 10);
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-async function startRecorder(outputPath, durationSeconds, cropFilter = 'crop=1204:605:76:200') {
+async function startRecorder(outputPath, durationSeconds, cropFilter = 'crop=1204:604:76:200') {
   const display = process.env.DISPLAY || ':99';
   const pulseSource = process.env.PULSE_CAPTURE_SOURCE || 'teams_sink.monitor';
 
@@ -454,7 +454,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     // Start FFmpeg
     console.log('🎥 Starting FFmpeg recording for live class...');
     const recordMs = maxMs;
-    const cropF = isNativeFullScreen ? 'crop=1280:720:0:85' : 'crop=1204:605:76:200';
+    const cropF = isNativeFullScreen ? 'crop=1280:720:0:85' : 'crop=1204:604:76:200';
       ffmpeg = await startRecorder(outputPath, Math.floor(recordMs / 1000), cropF);
 
     const startTime = Date.now();
