@@ -510,6 +510,13 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     } catch(e) {}
     await page.mouse.move(0, 800, { steps: 10 });
 
+    // Strict Timer Check
+    if (options.scheduledTime && Date.now() < options.scheduledTime) {
+        const waitMs = options.scheduledTime - Date.now();
+        console.log(`[DEBUG] Joined early. Waiting ${Math.floor(waitMs/1000)}s until scheduled time to start recording...`);
+        await page.waitForTimeout(waitMs);
+    }
+
     // Start FFmpeg
     console.log('🎥 Starting FFmpeg recording for live class...');
     const recordMs = maxMs;

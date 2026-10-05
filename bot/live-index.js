@@ -104,6 +104,7 @@ async function processItem(item) {
     await ref.update({ status: 'RECORDING', updatedAt: Date.now() });
     const result = await recordLiveClass(item.url, outputPath, cookies, { 
       maxMs: item.maxMs || MAX_MS,
+      scheduledTime: item.scheduledTime || 0,
       resumeTime: item.resumeTime || 0,
       creds: creds,
       onAuthError: async (b64Image) => {
@@ -138,6 +139,7 @@ async function processItem(item) {
         status: 'WAITING',
         addedAt: Date.now(),
         maxMs: item.maxMs || MAX_MS,
+      scheduledTime: item.scheduledTime || 0,
         resumeTime: newResumeTime,
         part: nextPartNum
       });
