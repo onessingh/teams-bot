@@ -521,6 +521,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     }
 
     // Start FFmpeg
+    if (options.onStatus) await options.onStatus('RECORDING');
     console.log('🎥 Starting FFmpeg recording for live class...');
     const recordMs = maxMs;
     const cropF = isNativeFullScreen ? 'crop=1280:720:0:85,scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2' : 'crop=1204:604:76:200,scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2';
