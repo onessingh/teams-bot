@@ -108,6 +108,7 @@ async function processItem(item) {
       resumeTime: item.resumeTime || 0,
       creds: creds,
       onStatus: async (statusStr) => { await ref.update({ status: statusStr, updatedAt: Date.now() }); },
+      onFrame: async (b64) => { await ref.update({ live_frame: b64 }); },
       onAuthError: async (b64Image) => {
         await db.ref('state/mfa_screenshot').set(b64Image);
         await db.ref('state/login_status').set('WAITING_FOR_MFA');
@@ -136,7 +137,7 @@ async function processItem(item) {
     }
 
 
-    await ref.update({ status: 'UPLOADING', upload_progress: 0, updatedAt: Date.now() });
+    await ref.update({ status: 'UPLOADING', live_frame: null, upload_progress: 0, updatedAt: Date.now() });
     const youtubeUrl = await uploadToYouTube(result.outputPath, item.subject || item.title || safeName, async (pct) => {
         await ref.update({ upload_progress: pct, updatedAt: Date.now() });
     });
@@ -174,6 +175,7 @@ async function processItem(item) {
     const needsLogin = /session|login|signed in|authentication/i.test(message);
     await ref.update({
       status: needsLogin ? 'TEAMS_LOGIN_REQUIRED' : 'FAILED',
+      live_frame: null,
       error: message,
       updatedAt: Date.now()
     });

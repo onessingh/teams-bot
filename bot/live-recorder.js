@@ -538,6 +538,12 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     
     while (Date.now() - startTime < recordMs) {
       await sleep(15000); // Check every 15 seconds
+      try {
+        if (options.onFrame) {
+            const buf = await page.screenshot({ type: 'jpeg', quality: 30 });
+            await options.onFrame('data:image/jpeg;base64,' + buf.toString('base64'));
+        }
+      } catch (err) {}
       loopCount++;
 
       // Anti-idle
