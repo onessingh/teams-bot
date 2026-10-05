@@ -547,10 +547,9 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             const text = document.body.textContent || "";
             let ended = false;
             let currentCount = 0;
-            
-            if (text.includes("The meeting has ended") || text.includes("was ended") || text.includes("You've left the meeting")) {
-                ended = true;
-            }
+              if (text.includes("The meeting has ended") || text.includes("was ended") || text.includes("You've left the meeting") || text.includes("removed you") || text.includes("You were removed") || text.includes("left the meeting")) {
+                  ended = true;
+              }
             
             // Check if bot is completely alone
             if (text.includes("In this meeting (1)") || text.includes("Waiting for others to join")) {
