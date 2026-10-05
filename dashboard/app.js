@@ -685,7 +685,7 @@ setInterval(async () => {
                 if (btn && !btn.disabled && !window.autoTriggerFired) {
                     window.autoTriggerFired = true;
                     btn.click();
-                    setTimeout(() => window.autoTriggerFired = false, 60000); // 1 min cooldown
+                    setTimeout(() => window.autoTriggerFired = false, 300000); // 5 min cooldown
                 }
             } else if (timeDiff > 0) {
                 // Show countdown if more than 20 mins away
