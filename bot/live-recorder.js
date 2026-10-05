@@ -556,13 +556,13 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
               }
             
             // Check if bot is completely alone
-            if (text.includes("In this meeting (1)") || text.includes("Waiting for others to join")) {
+            if (text.includes("In this meeting (1)") || text.includes("Attendees (1)") || text.includes("Participants (1)") || text.includes("Waiting for others to join")) {
                 ended = true;
                 currentCount = 1;
             }
             
             // Extract participant count
-            const match = text.match(/In this meeting \((\d+)\)/);
+            const match = text.match(/(?:In this meeting|Attendees|Participants) \((\d+)\)/);
             if (match) {
                 currentCount = parseInt(match[1], 10);
             }
