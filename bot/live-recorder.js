@@ -279,6 +279,12 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     }
     console.log('[DEBUG] Admitted to meeting. Setting up UI (Mic, Hide me, Full screen).');
     if (options.onStatus) await options.onStatus('ADMITTED_PREPARING_UI');
+
+    // Hide contact lists to prevent YouTube PII bans if stuck in PiP
+    try {
+        await page.addStyleTag({ content: 'table, [role="grid"], [role="list"], .fui-Tree { filter: blur(20px) !important; opacity: 0 !important; visibility: hidden !important; }' });
+    } catch(e) {}
+
     await page.waitForTimeout(5000); // Give the meeting UI 5 seconds to fully render
 
     // Double check mic is muted inside the meeting
