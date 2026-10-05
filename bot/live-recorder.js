@@ -336,11 +336,35 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         try {
           await frame.evaluate(() => {
             const style = document.createElement('style');
-            style.innerHTML = "* { cursor: none !important; }";
+            style.innerHTML = `
+    * { cursor: none !important; }
+    div[role="alert"], 
+    div[role="banner"],
+    div[data-tid^="toast"], 
+    div[data-tid^="banner"], 
+    .ui-toast, 
+    .toast-container, 
+    .ts-toast-stack,
+    div[aria-label*="notification" i],
+    div[aria-live="polite"] {
+        display: none !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+    }
+`;
             document.head.appendChild(style);
 
             setInterval(() => {
                 try {
+                    // Aggressively dismiss toasts/popups
+                    const btns = document.querySelectorAll('button');
+                    btns.forEach(btn => {
+                        const t = (btn.textContent || '').trim().toLowerCase();
+                        if (t === 'dismiss' || t === 'got it' || t === 'not now') {
+                            btn.click();
+                        }
+                    });
                     // Hide Top Header
                     const searchInput = document.querySelector('input[placeholder*="Ctrl+Alt+G"], input[placeholder*="Type"], input[id*="search"]');
                     if (searchInput) {
