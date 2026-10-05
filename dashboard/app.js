@@ -403,7 +403,7 @@ onValue(ref(db, 'live_queue'), (snapshot) => {
         hasItems = true;
         const item = childSnapshot.val();
         item.id = childSnapshot.key;
-        liveQueueItemsData.push(item);
+        liveQueueItemsData.push(item); window.liveQueueItemsData = liveQueueItemsData;
         
         let linkHtml = '';
         if (item.run_url) { linkHtml += `<a href="${item.run_url}" target="_blank" class="mt-2 inline-flex items-center text-xs font-bold text-gray-700 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-md transition-colors mr-2">?? Download Backup</a>`; }
@@ -666,4 +666,25 @@ populateSubjects('vod-semester', 'vod-subject');
 populateSubjects('live-semester', 'live-subject');
 
 
+
+
+// Auto-Trigger Logic
+setInterval(async () => {
+    if (!window.liveQueueItemsData) return;
+    const now = Date.now();
+    for (const item of window.liveQueueItemsData) {
+        if (item.status === 'WAITING' && item.scheduledTime > 0) {
+            // If we are within 20 minutes of the scheduled time
+            if (now >= item.scheduledTime - (20 * 60 * 1000) && now <= item.scheduledTime) {
+                console.log('Auto-triggering live bot for:', item.title);
+                const btn = document.getElementById('live-trigger-gh-btn');
+                if (btn && !btn.disabled) {
+                    btn.click();
+                    // Prevent multiple clicks
+                    await new Promise(r => setTimeout(r, 60000));
+                }
+            }
+        }
+    }
+}, 30000); // Check every 30 seconds
 
