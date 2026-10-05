@@ -55,7 +55,7 @@ async function claimNextWaiting() {
       const item = child.val() || {};
       if (!selected && item.status === 'WAITING' && item.url) {
         if (item.scheduledTime) {
-            if (now >= item.scheduledTime - (15 * 60 * 1000)) {
+            if (now >= item.scheduledTime - (25 * 60 * 1000)) {
                 selected = { id: child.key, ...item };
             }
         } else {

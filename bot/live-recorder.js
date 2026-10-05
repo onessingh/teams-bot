@@ -238,7 +238,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     console.log('[DEBUG] Waiting to be admitted from lobby...');
     let initLobbyWaitLoops = 0;
     let admitted = false;
-    while (initLobbyWaitLoops < 40) {
+    while (initLobbyWaitLoops < 120) {
         const inLobby = await page.evaluate(() => {
             const txt = document.body.textContent || "";
             return txt.includes("We've let people in the meeting know you're waiting") || 
@@ -574,8 +574,8 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         // Lobby Timeout Logic (10 minutes)
         if (stats.inLobby) {
             lobbyWaitLoops++;
-            if (lobbyWaitLoops > 40) {
-                console.log(`[DEBUG] Lobby timeout reached (10 minutes without being admitted). Ending meeting.`);
+            if (lobbyWaitLoops > 120) {
+                console.log(`[DEBUG] Lobby timeout reached (30 minutes without being admitted). Ending meeting.`);
                 meetingEnded = true;
             }
         } else {
