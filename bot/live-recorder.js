@@ -247,8 +247,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         // Wait in lobby (up to 30 mins)
         const isAdmitted = await page.evaluate(() => {
             const text = document.body.innerText || '';
-            console.log('[DEBUG-DUMP] Lobby screen text:', text.replace(/
-/g, ' | '));
+            console.log('[DEBUG-DUMP] Lobby screen text:', text.replace(/\\n/g, ' | '));
             
             const lowerText = text.toLowerCase();
             const inLobby = lowerText.includes('waiting in the lobby') || 
