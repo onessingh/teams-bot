@@ -302,10 +302,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     console.log('[DEBUG] Admitted to meeting. Setting up UI (Mic, Hide me, Full screen).');
     if (options.onStatus) await options.onStatus('ADMITTED_PREPARING_UI');
 
-    // Hide contact lists to prevent YouTube PII bans if stuck in PiP
-    try {
-        await page.addStyleTag({ content: 'table, [role="grid"], [role="list"], .fui-Tree { filter: blur(20px) !important; opacity: 0 !important; visibility: hidden !important; }' });
-    } catch(e) {}
+    // (Removed CSS blur so participants can be seen)
 
     await page.waitForTimeout(5000); // Give the meeting UI 5 seconds to fully render
 
@@ -449,6 +446,21 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         console.log('[DEBUG] Could not click Hide me/Full screen:', e.message);
     }
 
+    // Open Roster / Participants to show on the right side
+    try {
+        console.log('[DEBUG] Searching for in-meeting People button...');
+        const peopleBtn = page.locator('button[id="roster-button"], button[aria-label="Participants"], button[aria-label="People"], button[data-tid="roster-btn"]').first();
+        if (await peopleBtn.isVisible({ timeout: 5000 })) {
+            await peopleBtn.click();
+            console.log('[DEBUG] Opened Participants (People) list.');
+            await page.waitForTimeout(2000);
+        } else {
+            console.log('[DEBUG] People button not found.');
+        }
+    } catch (e) {
+        console.log('[DEBUG] Could not open Participants:', e.message);
+    }
+
     // Hide UI
     try {
       await page.keyboard.press('F11');
@@ -541,48 +553,9 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                         }
                     }
 
-                    // Hide Participants Pane visually
-                    const shareBtn = document.querySelector('button[aria-label*="Share invite"], input[placeholder*="Type a name"]');
-                    if (shareBtn) {
-                        let pane = shareBtn.parentElement;
-                        for (let i = 0; i < 15; i++) {
-                            if (pane && pane.tagName !== 'BODY') {
-                                const r = pane.getBoundingClientRect();
-                                if (r.width >= 200 && r.width <= 500 && r.height > window.innerHeight * 0.3) {
-                                    pane.style.setProperty('opacity', '0.01', 'important');
-                                    pane.style.setProperty('position', 'absolute', 'important');
-                                    pane.style.setProperty('right', '-9999px', 'important');
-                                    pane.style.setProperty('z-index', '-1', 'important');
-                                    break;
-                                }
-                                pane = pane.parentElement;
-                            }
-                        }
-                    }
+                    // (Participants pane hiding removed)
 
-                    // Force the video stage
-                    const video = document.querySelector('video');
-                    if (video) {
-                        let stage = video.parentElement;
-                        for (let i = 0; i < 15; i++) {
-                            if (stage && stage.tagName !== 'BODY') {
-                                const r = stage.getBoundingClientRect();
-                                if (r.width > window.innerWidth * 0.3 && r.height > window.innerHeight * 0.3) {
-                                    stage.style.setProperty('position', 'fixed', 'important');
-                                    stage.style.setProperty('top', '0', 'important');
-                                    stage.style.setProperty('left', '0', 'important');
-                                    stage.style.setProperty('width', '100vw', 'important');
-                                    stage.style.setProperty('height', '100vh', 'important');
-                                    stage.style.setProperty('z-index', '999', 'important');
-                                    stage.style.setProperty('background', '#000', 'important');
-                                    stage.style.setProperty('padding', '0', 'important');
-                                    stage.style.setProperty('margin', '0', 'important');
-                                    break; 
-                                }
-                                stage = stage.parentElement;
-                            }
-                        }
-                    }
+                    // (Force video stage removed so roster can share screen space)
                 } catch (err) {}
             }, 1000);
           });
