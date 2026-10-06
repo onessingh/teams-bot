@@ -689,7 +689,7 @@ setInterval(async () => {
                     // Call GitHub API directly (don't rely on button which may open token modal)
                     const token = localStorage.getItem('teams_gh_pat');
                     if (!token) {
-                        if (elapsedDiv) elapsedDiv.innerHTML = '<span class="text-red-600 font-bold">⚠️ No GitHub token! Please click Start Live Bot button to add token.</span>';
+                        if (elapsedDiv) elapsedDiv.innerHTML = '<span class="text-red-600 font-bold">No GitHub token! Please click Start Live Bot button to add token.</span>';
                         window.autoTriggerFired = false; // reset so user can fix and it retries
                     } else {
                         try {
@@ -702,10 +702,10 @@ setInterval(async () => {
                                 body: JSON.stringify({ event_type: 'start-live-processing' })
                             });
                             if (response.ok) {
-                                if (elapsedDiv) elapsedDiv.innerHTML = '<span class="text-green-600 font-bold">✅ Auto-triggered! Bot joining in ~2 mins...</span>';
+                                if (elapsedDiv) elapsedDiv.innerHTML = '<span class="text-green-600 font-bold">Auto-triggered! Bot joining in ~2 mins...</span>';
                                 console.log('[AutoTrigger] Successfully fired for:', item.title);
                             } else if (response.status === 401) {
-                                if (elapsedDiv) elapsedDiv.innerHTML = '<span class="text-red-600 font-bold">⚠️ Token expired! Click Start Live Bot to re-enter.</span>';
+                                if (elapsedDiv) elapsedDiv.innerHTML = '<span class="text-red-600 font-bold">Token expired! Click Start Live Bot to re-enter.</span>';
                                 localStorage.removeItem('teams_gh_pat');
                                 window.autoTriggerFired = false;
                             } else {
