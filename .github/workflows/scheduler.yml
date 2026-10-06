@@ -1,0 +1,29 @@
+name: Live Class Scheduler
+
+on:
+  schedule:
+    # Run every 5 minutes — checks Firebase and triggers Live Class Worker if needed
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # Allow manual run for testing
+
+jobs:
+  check-and-trigger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install firebase-admin
+
+      - name: Run Scheduler
+        env:
+          FIREBASE_SERVICE_ACCOUNT_B64: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_B64 }}
+          FIREBASE_DB_URL: ${{ secrets.FIREBASE_DB_URL }}
+          GH_SCHEDULER_TOKEN: ${{ secrets.GH_SCHEDULER_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node bot/scheduler.js
