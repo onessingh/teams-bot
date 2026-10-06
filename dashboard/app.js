@@ -689,7 +689,7 @@ setInterval(async () => {
                     // Call GitHub API directly (don't rely on button which may open token modal)
                     const token = localStorage.getItem('teams_gh_pat');
                     if (!token) {
-                        if (elapsedDiv) elapsedDiv.innerHTML = '<span class="text-red-600 font-bold">No GitHub token! Please click Start Live Bot button to add token.</span>';
+                        // silently fail, backend scheduler will handle it
                         window.autoTriggerFired = false; // reset so user can fix and it retries
                     } else {
                         try {
