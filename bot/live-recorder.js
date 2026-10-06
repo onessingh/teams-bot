@@ -256,12 +256,20 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     let admitted = false;
     while (initLobbyWaitLoops < 120) {
         const isAdmitted = await page.evaluate(() => {
-            // Check for buttons that only exist inside a real meeting (not in lobby)
+            // Check if we are truly in the meeting. 
+            // We must NOT be in the lobby. The lobby has text like "Waiting for others to join" or "Someone in the meeting should let you in soon"
+            const lobbyTextPresent = Array.from(document.querySelectorAll('div, span, h2, h1')).some(el => {
+                const txt = (el.innerText || '').toLowerCase();
+                return txt.includes('waiting for others to join') || txt.includes('should let you in soon') || txt.includes('when the meeting starts, we') || txt.includes('we\'ll let people know you\'re waiting');
+            });
+            
+            // Check for buttons that only exist inside a real meeting
             const chatBtn = document.querySelector('[data-tid="chat-button"], [aria-label*="Chat" i]');
             const peopleBtn = document.querySelector('[data-tid="roster-button"], [aria-label*="People" i]');
-            const reactBtn = document.querySelector('[data-tid="reactions-button"], [aria-label*="React" i]');
-            const shareBtn = document.querySelector('[data-tid="share-button"], [aria-label*="Share" i]');
-            return !!(chatBtn || peopleBtn || reactBtn || shareBtn);
+            const leaveBtn = document.querySelector('[data-tid="leave-button"], [data-tid="call-hangup"]');
+            
+            // We are admitted IF there's no lobby text AND meeting buttons exist
+            return !lobbyTextPresent && !!(chatBtn || peopleBtn || leaveBtn);
         });
         
         if (isAdmitted) {
