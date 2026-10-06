@@ -353,7 +353,17 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     // Try to activate "Hide me" and "Full screen" using aggressive locators
     try {
         
-    // Try to expand PiP if stuck in mini-window
+    // Step 0: Close 'All contacts' sidebar if it's covering the screen
+    try {
+        const bodyText = await page.evaluate(() => document.body.innerText || '');
+        if (bodyText.toLowerCase().includes('all contacts') || bodyText.toLowerCase().includes('find a contact')) {
+            console.log('[DEBUG] "All Contacts" sidebar is open - pressing Escape to close...');
+            await page.keyboard.press('Escape');
+            await page.waitForTimeout(1500);
+        }
+    } catch(e) {}
+
+    // Step 1: Try to expand PiP if stuck in mini-window
     try {
         console.log('[DEBUG] Checking if stuck in PiP window...');
         await page.evaluate(() => {
@@ -365,7 +375,6 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             if (returnBtns.length > 0) {
                 returnBtns[0].click();
             } else {
-                // Try clicking the mini-player container directly
                 const miniPlayer = document.querySelector('[data-tid="calls-pip"], .app-svg'); 
                 if (miniPlayer) miniPlayer.click();
             }
