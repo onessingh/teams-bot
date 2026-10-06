@@ -1,4 +1,4 @@
-﻿import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getDatabase, ref, push, onValue, set, remove } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
 
 const firebaseConfig = {
@@ -103,7 +103,7 @@ onValue(ref(db, 'queue'), (snapshot) => {
         let linkHtml = '';
         if (item.run_url) { linkHtml += `<a href="${item.run_url}" target="_blank" class="mt-2 inline-flex items-center text-xs font-bold text-gray-700 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-md transition-colors mr-2">?? Download Backup</a>`; }
           if (item.youtube_url) {
-            linkHtml += `<a href="${item.youtube_url}" target="_blank" class="mt-2 inline-flex items-center text-xs font-bold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-md transition-colors">â–¶ï¸ Watch on YouTube</a>`;
+            linkHtml += `<a href="${item.youtube_url}" target="_blank" class="mt-2 inline-flex items-center text-xs font-bold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-md transition-colors">▶️ Watch on YouTube</a>`;
         }
         
         let statusText = item.status;
@@ -120,7 +120,7 @@ onValue(ref(db, 'queue'), (snapshot) => {
         const html = `
             <li class="queue-item bg-white p-4 border border-gray-100 rounded-xl shadow-sm relative group">
                 <button class="delete-btn absolute top-3 right-3 text-red-600 font-bold bg-red-50 hover:bg-red-100 px-3 py-1 rounded-lg text-[10px] uppercase tracking-wider border border-red-200 transition-colors" data-id="${item.id}" title="Delete this item">
-                    âŒ Delete
+                    ❌ Delete
                 </button>
                 <div class="flex justify-between items-start mb-1 pr-16">
                     <span class="font-bold text-sm text-gray-800 truncate pr-2" title="${item.title}">${item.title}</span>
@@ -130,7 +130,7 @@ onValue(ref(db, 'queue'), (snapshot) => {
                 </div>
                 <div class="text-[11px] text-gray-500 flex justify-between items-center pr-8">
                     <span>${item.scheduledTime ? 'Scheduled: ' + new Date(item.scheduledTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Added: ' + new Date(item.addedAt).toLocaleString()}</span>
-                    ${item.maxMs ? `<span class="bg-gray-100 px-2 py-0.5 rounded text-gray-600">â³ ${(item.maxMs/60000).toFixed(0)}m limit</span>` : ''}
+                    ${item.maxMs ? `<span class="bg-gray-100 px-2 py-0.5 rounded text-gray-600">⏳ ${(item.maxMs/60000).toFixed(0)}m limit</span>` : ''}
                 </div>
                 <div id="elapsed-${item.id}" class="text-xs font-bold text-red-600 mt-2 empty:hidden"></div>
                 ${(item.status === 'RECORDING' && item.live_frame) ? `
@@ -161,7 +161,7 @@ setInterval(() => {
             const hours = Math.floor(diff / 3600000);
             const mins = Math.floor((diff % 3600000) / 60000).toString().padStart(2, '0');
             const secs = Math.floor((diff % 60000) / 1000).toString().padStart(2, '0');
-            elapsedEl.textContent = `â±ï¸ Elapsed: ${hours > 0 ? hours + ':' : ''}${mins}:${secs}`;
+            elapsedEl.textContent = `⏱️ Elapsed: ${hours > 0 ? hours + ':' : ''}${mins}:${secs}`;
         } else if (elapsedEl) {
             elapsedEl.textContent = '';
         }
@@ -199,10 +199,10 @@ onValue(ref(db, 'state'), (snapshot) => {
     if(!state) return;
     
     if (state.login_status === "SUCCESS") {
-        teamsStatus.innerHTML = "Teams: <span class='text-green-500'>ðŸŸ¢ Connected</span>";
+        teamsStatus.innerHTML = "Teams: <span class='text-green-500'>🟢 Connected</span>";
         teamsStatus.className = "px-3 py-1 rounded-full text-xs font-bold bg-green-50 border border-green-200 text-green-700";
         if(loginModal.classList.contains('active')) {
-            mfaStatusText.textContent = "âœ… Login Successful! Cookies saved.";
+            mfaStatusText.textContent = "✅ Login Successful! Cookies saved.";
             mfaStatusText.className = "text-sm font-bold text-green-600 mb-3";
             setTimeout(() => {
                 loginModal.classList.remove('active');
@@ -284,7 +284,7 @@ triggerGhBtn.addEventListener('touchend', () => clearTimeout(pressTimer));
 
 async function triggerGitHubAction(token) {
     const originalText = triggerGhBtn.innerHTML;
-    triggerGhBtn.innerHTML = "â³ Starting...";
+    triggerGhBtn.innerHTML = "⏳ Starting...";
     triggerGhBtn.disabled = true;
     
     try {
@@ -299,7 +299,7 @@ async function triggerGitHubAction(token) {
         });
 
         if (response.ok) {
-            triggerGhBtn.innerHTML = "âœ… Bot Started!";
+            triggerGhBtn.innerHTML = "✅ Bot Started!";
             triggerGhBtn.classList.replace('bg-indigo-600', 'bg-green-600');
             setTimeout(() => {
                 ghModal.classList.remove('active');
