@@ -366,16 +366,13 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                 }
                 
                 // 2. Try the PiP container itself
-                const pip = document.querySelector('[data-tid="calls-pip"]');
+                const pip = document.querySelector('[data-tid="calls-pip"], .calls-pip, [class*="pipContainer"]');
                 if (pip) {
-                    // Try clicking expand icon inside PiP (usually last button)
-                    const pipBtns = pip.querySelectorAll('button');
-                    if (pipBtns.length > 0) {
-                        pipBtns[pipBtns.length - 1].click(); // last button is usually expand
-                        return 'pip last button clicked';
-                    }
+                    // Dispatch a true mousedown event as React sometimes ignores .click()
+                    pip.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+                    pip.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
                     pip.click();
-                    return 'pip container clicked';
+                    return 'pip container dispatched mousedown/click';
                 }
                 
                 // 3. Try the calling status bar
@@ -405,14 +402,24 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             await page.keyboard.press('Escape');
             await page.waitForTimeout(1500);
         }
+        
+        // ULTIMATE FALLBACK: Blind click the top-left area where the PiP window floats
+        // This physically clicks the center of the PiP to expand it if DOM locators failed
+        console.log('[DEBUG] Blind clicking top-left area (150, 150) to force PiP expansion...');
+        await page.mouse.click(150, 150);
+        await page.waitForTimeout(1000);
+        await page.mouse.click(200, 200);
+        await page.waitForTimeout(1000);
+        
     } catch(e) { console.log('[DEBUG] PiP expand error:', e.message); }
 
     // Try to activate "Hide me" and "Full screen" using aggressive locators
     try {
 
-    console.log('[DEBUG] Searching for View button...');
-        const viewBtn = page.locator('button').filter({ hasText: /^View$/ }).first();
-        const viewBtnFallback = page.locator('button[aria-label*="View"], button[data-tid*="view"]').first();
+    console.log('[DEBUG] Searching for View button safely inside meeting toolbar...');
+        // ONLY look for View inside the actual meeting toolbar to avoid clicking "View Apps" in Teams sidebar!
+        const viewBtn = page.locator('[data-tid="meeting-toolbar"] button, [data-tid="calling-status-bar"] button, [id="roster-button"]~button, button[aria-label="View"]').filter({ hasText: /^View$/i }).first();
+        const viewBtnFallback = page.locator('[data-tid="meeting-toolbar"] button[aria-label*="View"], [data-tid="meeting-toolbar"] button[data-tid*="view"]').first();
         const targetViewBtn = (await viewBtn.isVisible({ timeout: 2000 })) ? viewBtn : viewBtnFallback;
         
         if (await targetViewBtn.isVisible({ timeout: 2000 })) {
