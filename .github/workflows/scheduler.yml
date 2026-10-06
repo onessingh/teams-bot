@@ -18,7 +18,7 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies
-        run: npm install firebase-admin
+        run: npm install firebase-admin dotenv
 
       - name: Run Scheduler
         env:
