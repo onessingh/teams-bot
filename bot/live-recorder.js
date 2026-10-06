@@ -274,7 +274,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             if (hardLobby) return false;
             
             // If we can see a running timer (format mm:ss like 00:26, 01:41) AND a Leave button, we are IN
-            const hasTimer = /\d{2}:\d{2}/.test(text);
+            const hasTimer = /(?:\d{2}:\d{2}|--:--)/.test(text);
             const hasLeaveBtn = !!document.querySelector('[data-tid="hang-up-btn"], [data-tid="leave-button"], [data-tid="call-hangup"]') ||
                                 lowerText.includes('leave');
             if (hasTimer && hasLeaveBtn) return true;
