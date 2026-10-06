@@ -1,4 +1,4 @@
-const { chromium } = require('playwright');
+﻿const { chromium } = require('playwright');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -73,7 +73,6 @@ async function stopRecorder(proc) {
       finish();
     }, 5000);
   });
-});
 }
 
 async function clickPlay(page) {
