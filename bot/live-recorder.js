@@ -179,26 +179,40 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         try {
             console.log('[DEBUG] Checking if Mic is ON on prejoin...');
             const isMicOn = await page.evaluate(() => {
-                const micBtns = Array.from(document.querySelectorAll('*')).filter(el => 
-                    (el.getAttribute('data-tid') === 'toggle-mute') ||
-                    (el.getAttribute('aria-label') && el.getAttribute('aria-label').toLowerCase().includes('mic'))
-                );
-                micBtns.forEach(b => console.log('[DEBUG-DUMP] Prejoin Mic:', b.outerHTML));
-                for (let btn of micBtns) {
-                    const ariaChecked = btn.getAttribute('aria-checked');
-                    const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
-                    const dataState = btn.getAttribute('data-state');
-                    if (ariaChecked === 'false' || dataState === 'unmuted' || ariaLabel === 'mute' || ariaLabel === 'mute microphone') return true;
+                // The mic toggle is an <input type="checkbox" role="switch" data-tid="toggle-mute">
+                // data-cid="toggle-mute-true" means mic is ON (unmuted)
+                // data-cid="toggle-mute-false" means mic is OFF (muted)
+                const micInput = document.querySelector('input[data-tid="toggle-mute"]');
+                if (micInput) {
+                    const dataCid = micInput.getAttribute('data-cid') || '';
+                    const isChecked = micInput.checked;
+                    console.log('[DEBUG-DUMP] Mic input data-cid:', dataCid, 'checked:', isChecked);
+                    // toggle-mute-true = mic is ON (need to mute)
+                    // checked = true also means mic is ON on the prejoin screen
+                    return dataCid === 'toggle-mute-true' || isChecked === true;
                 }
+                // Fallback: check aria-label buttons
+                const micBtns = Array.from(document.querySelectorAll('*')).filter(el => 
+                    el.getAttribute('aria-label') && el.getAttribute('aria-label').toLowerCase().includes('mic')
+                );
+                micBtns.forEach(b => console.log('[DEBUG-DUMP] Prejoin Mic fallback:', b.outerHTML));
                 return false;
             });
             if (isMicOn) {
-                console.log('[DEBUG] Clicking mic on prejoin to mute...');
+                console.log('[DEBUG] Mic is ON on prejoin, clicking to mute...');
                 await page.evaluate(() => {
-                    const btn = document.querySelector('[data-tid="toggle-mute"], button[aria-label*="Mute"], button[aria-label*="mic" i]');
-                    if (btn) btn.click();
+                    // Click the checkbox input directly
+                    const micInput = document.querySelector('input[data-tid="toggle-mute"]');
+                    if (micInput) {
+                        micInput.click();
+                    } else {
+                        const btn = document.querySelector('[data-tid="toggle-mute"], button[aria-label*="Mute"], button[aria-label*="mic" i]');
+                        if (btn) btn.click();
+                    }
                 });
                 await page.waitForTimeout(1000);
+            } else {
+                console.log('[DEBUG] Mic already muted on prejoin.');
             }
         } catch(e) {
             console.log('[DEBUG] Mic toggle error on prejoin', e.message);
@@ -243,22 +257,29 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     console.log('[DEBUG] Waiting to be admitted from lobby...');
     if (options.onStatus) await options.onStatus('WAITING_IN_LOBBY');
     let initLobbyWaitLoops = 0;
-    let admitted = false;    while (!admitted && initLobbyWaitLoops < 120) { 
+    let admitted = false;
+    while (!admitted && initLobbyWaitLoops < 120) { 
         // Wait in lobby (up to 30 mins)
         const isAdmitted = await page.evaluate(() => {
             const text = document.body.innerText || '';
-            console.log('[DEBUG-DUMP] Lobby screen text:', text.replace(/\\n/g, ' | '));
+            console.log('[DEBUG-DUMP] Lobby screen text:', text.replace(/\n/g, ' | '));
             
             const lowerText = text.toLowerCase();
-            const inLobby = lowerText.includes('waiting in the lobby') || 
-                            lowerText.includes('we\'ve let people') ||
-                            lowerText.includes('we\'ll let people') ||
-                            lowerText.includes('when the meeting starts') ||
-                            lowerText.includes('waiting for others to join') ||
-                            lowerText.includes('someone in the meeting should let you in soon');
-                            
-            if (inLobby) return false;
             
+            // DEFINITE lobby indicators
+            const hardLobby = lowerText.includes('someone will let you in') || 
+                              lowerText.includes('we\'ve let people in the meeting know you\'re waiting') ||
+                              lowerText.includes('when the meeting starts, we\'ll let people know') ||
+                              lowerText.includes('hi, raj. someone will let you in');
+            if (hardLobby) return false;
+            
+            // If we can see a running timer (format mm:ss like 00:26, 01:41) AND a Leave button, we are IN
+            const hasTimer = /\d{2}:\d{2}/.test(text);
+            const hasLeaveBtn = !!document.querySelector('[data-tid="hang-up-btn"], [data-tid="leave-button"], [data-tid="call-hangup"]') ||
+                                lowerText.includes('leave');
+            if (hasTimer && hasLeaveBtn) return true;
+            
+            // Also check for video gallery
             const hasVideoGallery = !!document.querySelector('[data-tid="video-gallery"], [data-tid="calling-roster-stage"]');
             if (hasVideoGallery) return true;
             
@@ -292,22 +313,31 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     // Double check mic is muted inside the meeting
     try {
         console.log('[DEBUG] Checking mic status inside meeting...');
-        await page.evaluate(() => {
-            const btns = document.querySelectorAll('[data-tid="toggle-mute"], button[aria-label*="Mute" i], button[aria-label*="mic" i]');
-            btns.forEach(btn => console.log('[DEBUG-DUMP] In-meeting Mic Btn:', btn.outerHTML));
-        });
-        const inMeetingMic = page.locator('[data-tid="toggle-mute"], button[aria-label*="Mute" i], button[aria-label*="mic" i]').first();
-        if (await inMeetingMic.isVisible({ timeout: 5000 })) {
-            const ariaLabel = (await inMeetingMic.getAttribute('aria-label')) || '';
-            const ariaChecked = await inMeetingMic.getAttribute('aria-checked');
-            const dataState = await inMeetingMic.getAttribute('data-state');
-            const isUnmuted = ariaChecked === 'false' || dataState === 'unmuted' || ariaLabel.toLowerCase() === 'mute' || ariaLabel.toLowerCase() === 'mute microphone';
-            console.log('[DEBUG] Mic unmuted status:', isUnmuted, ' (label:', ariaLabel, 'checked:', ariaChecked, 'state:', dataState, ')');
-            if (isUnmuted) {
-                console.log('[DEBUG] Clicking mic to mute it...');
-                await inMeetingMic.click({ force: true });
-                await page.waitForTimeout(2000);
+        const isMicUnmuted = await page.evaluate(() => {
+            // Check the input toggle (same as prejoin)
+            const micInput = document.querySelector('input[data-tid="toggle-mute"]');
+            if (micInput) {
+                const dataCid = micInput.getAttribute('data-cid') || '';
+                console.log('[DEBUG-DUMP] In-meeting Mic Input data-cid:', dataCid, 'checked:', micInput.checked);
+                return dataCid === 'toggle-mute-true' || micInput.checked === true;
             }
+            // Fallback: dump all mic-related elements
+            const btns = document.querySelectorAll('[data-tid="toggle-mute"], button[aria-label*="Mute" i], button[aria-label*="mic" i]');
+            btns.forEach(btn => console.log('[DEBUG-DUMP] In-meeting Mic Btn:', btn.getAttribute('aria-label'), btn.getAttribute('aria-checked'), btn.getAttribute('data-cid')));
+            for (const btn of btns) {
+                const label = (btn.getAttribute('aria-label') || '').toLowerCase().trim();
+                const dataCid = btn.getAttribute('data-cid') || '';
+                if (label === 'mute' || label === 'mute microphone' || dataCid.endsWith('-true')) return true;
+            }
+            return false;
+        });
+        console.log('[DEBUG] Mic unmuted status:', isMicUnmuted);
+        if (isMicUnmuted) {
+            console.log('[DEBUG] Mic is ON inside meeting, muting via keyboard shortcut Ctrl+Shift+M...');
+            await page.keyboard.press('Control+Shift+M');
+            await page.waitForTimeout(2000);
+        } else {
+            console.log('[DEBUG] Mic is already muted inside meeting.');
         }
     } catch(e) { console.log('[DEBUG] Mic verify error:', e.message); }
 
