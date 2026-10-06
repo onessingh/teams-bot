@@ -137,9 +137,9 @@ async function processItem(item) {
 
     // Upload to YouTube
     await ref.update({ status: 'UPLOADING', updatedAt: Date.now() });
-    const ytResult = await uploadToYouTube(result.outputPath, {
-      title: item.title || 'Class Recording',
-      description: 'Automatically recorded class.',
+    const subjectLabel = typeof item.subject === 'string' && item.subject.trim() ? item.subject.trim() : 'Teams Classes';
+    const ytResult = await uploadToYouTube(result.outputPath, subjectLabel, async (pct) => {
+      await ref.update({ upload_progress: pct, updatedAt: Date.now() });
     });
 
     await ref.update({
