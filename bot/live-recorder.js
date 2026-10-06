@@ -256,17 +256,21 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     let admitted = false;
     while (initLobbyWaitLoops < 120) {
         
+          
           const isAdmitted = await page.evaluate(() => {
-              const txt = document.body.innerText.toLowerCase();
-              const isLobby = txt.includes('waiting for others to join') || 
-                              txt.includes('should let you in soon') || 
-                              txt.includes('when the meeting starts') || 
-                              txt.includes('let people know you\'re waiting');
-                              
-              const hasMeetingControls = !!document.querySelector('[data-tid="chat-button"], [data-tid="roster-button"], [data-tid="leave-button"], [data-tid="call-hangup"]');
+              // The strongest indicator that we are actually IN the meeting and not in the lobby
+              // is the presence of the actual in-meeting mic mute/unmute button or the Leave button.
+              // We also make sure we aren't looking at the pre-join screen anymore.
               
-              return !isLobby && hasMeetingControls;
+              const hasLeaveBtn = !!document.querySelector('[data-tid="leave-button"], [data-tid="call-hangup"], button[aria-label*="Leave" i]');
+              const hasMicBtn = !!document.querySelector('[data-tid="toggle-mute"], button[aria-label*="Mute" i], button[aria-label*="mic" i]');
+              const hasChatBtn = !!document.querySelector('[data-tid="chat-button"], button[aria-label*="Chat" i]');
+              
+              // We are admitted if we have at least 2 of the core meeting buttons (to avoid false positives from stray elements)
+              const score = (hasLeaveBtn ? 1 : 0) + (hasMicBtn ? 1 : 0) + (hasChatBtn ? 1 : 0);
+              return score >= 2;
           });
+
 
         
         if (isAdmitted) {
@@ -307,6 +311,9 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                 console.log('[DEBUG] Mic was left ON in meeting, turning it OFF now via click!');
                 await inMeetingMic.click({ force: true });
                 await page.waitForTimeout(2000);
+                // Verify click worked
+                const checkAria = await inMeetingMic.getAttribute('aria-checked');
+                console.log('[DEBUG] Mic status after click is now:', checkAria);
             }
         } else {
              console.log('[DEBUG] Mic button not found on screen.');
