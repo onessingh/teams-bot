@@ -341,19 +341,30 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         }
     } catch(e) { console.log('[DEBUG] Mic verify error:', e.message); }
 
-    // Open Roster / Participants to monitor count
-    try {
-        const rosterBtn = page.locator('button[id="roster-button"], button[aria-label="Participants"], button[aria-label="People"], button[id="people-button"], button:has-text("People")').first();
-        if (await rosterBtn.isVisible({ timeout: 5000 })) {
-            await rosterBtn.click();
-            console.log('[DEBUG] Opened Participants (People) list.');
-        }
-    } catch (e) {}
+    // IMPORTANT: Do NOT click People/Participants - in new Teams this opens
+    // "All contacts" sidebar instead of the in-meeting panel. Count is tracked via text.
+    console.log('[DEBUG] Skipping People panel open (causes All Contacts sidebar).');
 
     // Try to activate "Hide me" and "Full screen" using aggressive locators
     try {
         
-    // Step 0: Close 'All contacts' sidebar if it's covering the screen
+    // Step 0a: Click on the meeting mini-window to bring it to focus
+    try {
+        console.log('[DEBUG] Trying to focus/expand meeting mini-window...');
+        const focused = await page.evaluate(() => {
+            const pip = document.querySelector('[data-tid="calls-pip"]');
+            if (pip) { pip.click(); return 'pip clicked'; }
+            const meetingHeader = document.querySelector('[data-tid="calling-status-bar"], [data-tid="meeting-header"]');
+            if (meetingHeader) { meetingHeader.click(); return 'header clicked'; }
+            const callingDivs = Array.from(document.querySelectorAll('[class*="calling-"][class*="container"], [data-tid*="calling"]'));
+            if (callingDivs.length > 0) { callingDivs[0].click(); return 'calling div clicked'; }
+            return 'nothing found';
+        });
+        console.log('[DEBUG] Meeting focus result:', focused);
+        await page.waitForTimeout(1500);
+    } catch(e) { console.log('[DEBUG] Meeting focus error:', e.message); }
+
+    // Step 0b: Close 'All contacts' sidebar if it's covering the screen
     try {
         const bodyText = await page.evaluate(() => document.body.innerText || '');
         if (bodyText.toLowerCase().includes('all contacts') || bodyText.toLowerCase().includes('find a contact')) {
