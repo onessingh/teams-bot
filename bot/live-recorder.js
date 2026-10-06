@@ -284,12 +284,20 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             const hasVideoGallery = !!document.querySelector('[data-tid="video-gallery"], [data-tid="calling-roster-stage"]');
             if (hasVideoGallery) return true;
             
+            // Check for instant drop/kick
+            if (lowerText.includes('rejoin') && lowerText.includes('learn about teams')) {
+                return 'dropped';
+            }
+            
             return false;
         });
         
-        if (isAdmitted) {
+        if (isAdmitted === true) {
             admitted = true;
             break;
+        } else if (isAdmitted === 'dropped') {
+            console.log('[DEBUG] Call dropped immediately upon joining (Rejoin screen detected). Exiting early.');
+            break; // will fall through to !admitted check and exit
         }
         await page.waitForTimeout(15000);
         initLobbyWaitLoops++;
