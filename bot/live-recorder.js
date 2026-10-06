@@ -255,22 +255,19 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     let initLobbyWaitLoops = 0;
     let admitted = false;
     while (initLobbyWaitLoops < 120) {
-        const isAdmitted = await page.evaluate(() => {
-            // Check if we are truly in the meeting. 
-            // We must NOT be in the lobby. The lobby has text like "Waiting for others to join" or "Someone in the meeting should let you in soon"
-            const lobbyTextPresent = Array.from(document.querySelectorAll('div, span, h2, h1')).some(el => {
-                const txt = (el.innerText || '').toLowerCase();
-                return txt.includes('waiting for others to join') || txt.includes('should let you in soon') || txt.includes('when the meeting starts, we') || txt.includes('we\'ll let people know you\'re waiting');
-            });
-            
-            // Check for buttons that only exist inside a real meeting
-            const chatBtn = document.querySelector('[data-tid="chat-button"], [aria-label*="Chat" i]');
-            const peopleBtn = document.querySelector('[data-tid="roster-button"], [aria-label*="People" i]');
-            const leaveBtn = document.querySelector('[data-tid="leave-button"], [data-tid="call-hangup"]');
-            
-            // We are admitted IF there's no lobby text AND meeting buttons exist
-            return !lobbyTextPresent && !!(chatBtn || peopleBtn || leaveBtn);
-        });
+        
+          const isAdmitted = await page.evaluate(() => {
+              const txt = document.body.innerText.toLowerCase();
+              const isLobby = txt.includes('waiting for others to join') || 
+                              txt.includes('should let you in soon') || 
+                              txt.includes('when the meeting starts') || 
+                              txt.includes('let people know you\'re waiting');
+                              
+              const hasMeetingControls = !!document.querySelector('[data-tid="chat-button"], [data-tid="roster-button"], [data-tid="leave-button"], [data-tid="call-hangup"]');
+              
+              return !isLobby && hasMeetingControls;
+          });
+
         
         if (isAdmitted) {
             admitted = true;
@@ -295,32 +292,30 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
 
     await page.waitForTimeout(5000); // Give the meeting UI 5 seconds to fully render
 
+    
     // Double check mic is muted inside the meeting
     try {
+        console.log('[DEBUG] Checking mic status...');
         const inMeetingMic = page.locator('[data-tid="toggle-mute"], button[aria-label*="Mute"], button[aria-label*="mic" i]').first();
         if (await inMeetingMic.isVisible({ timeout: 5000 })) {
             const ariaChecked = await inMeetingMic.getAttribute('aria-checked');
             const ariaLabel = await inMeetingMic.getAttribute('aria-label');
             const isUnmuted = ariaChecked === 'true' || (ariaLabel && ariaLabel.toLowerCase().includes('mute') && !ariaLabel.toLowerCase().includes('unmute'));
             
+            console.log('[DEBUG] Mic unmuted status:', isUnmuted);
             if (isUnmuted) {
-                console.log('[DEBUG] Mic was left ON in meeting, turning it OFF now!');
-                // Try keyboard shortcut first (Ctrl+Shift+M) as it is very reliable
-                await page.keyboard.press('Control+Shift+M');
-                await page.waitForTimeout(1000);
-                
-                // If still unmuted by checking state, try clicking it
-                const stillUnmuted = await inMeetingMic.getAttribute('aria-checked') === 'true';
-                if (stillUnmuted) {
-                     await inMeetingMic.click({ force: true });
-                }
+                console.log('[DEBUG] Mic was left ON in meeting, turning it OFF now via click!');
+                await inMeetingMic.click({ force: true });
+                await page.waitForTimeout(2000);
             }
         } else {
-            // Just blind fire Ctrl+Shift+M just in case we couldn't find the button but it's on
-            console.log('[DEBUG] Mic button not found, blind firing Ctrl+Shift+M to mute...');
-            await page.keyboard.press('Control+Shift+M');
+             console.log('[DEBUG] Mic button not found on screen.');
+             await page.keyboard.press('Control+Shift+M');
         }
-    } catch(e) {}
+    } catch(e) {
+        console.log('[DEBUG] Mic verify error:', e.message);
+    }
+
     // Open Roster / Participants to monitor count
     try {
         const rosterBtn = page.locator('button[id="roster-button"], button[aria-label="Participants"], button[aria-label="People"], button[id="people-button"], button:has-text("People")').first();
