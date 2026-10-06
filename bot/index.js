@@ -135,8 +135,25 @@ async function processItem(item) {
       console.error('[ERROR] Failed to concatenate intro/outro:', err);
     }
 
-    const newResumeTime = (item.resumeTime || 0) + Math.floor(result.durationRecordedMs / 1000);
-      
+    // Upload to YouTube
+    await ref.update({ status: 'UPLOADING', updatedAt: Date.now() });
+    const ytResult = await uploadToYouTube(result.outputPath, {
+      title: item.title || 'Class Recording',
+      description: 'Automatically recorded class.',
+    });
+
+    await ref.update({
+      status: 'DONE',
+      youtube_url: ytResult?.url || null,
+      updatedAt: Date.now()
+    });
+    console.log(`✅ Done: ${item.title}`);
+
+    // If recording was cut short (max duration), queue next part
+    if (result.isPartial) {
+      const nextPartNum = (item.part || 1) + 1;
+      const newTitle = `${item.title || 'Class'} (Part ${nextPartNum})`;
+      const newResumeTime = (item.resumeTime || 0) + Math.floor(result.durationRecordedMs / 1000);
       await db.ref('queue').push({
         url: item.url,
         title: newTitle,
