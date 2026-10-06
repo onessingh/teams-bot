@@ -181,32 +181,22 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             const isMicOn = await page.evaluate(() => {
                 const micBtns = Array.from(document.querySelectorAll('*')).filter(el => 
                     (el.getAttribute('data-tid') === 'toggle-mute') ||
-                    (el.getAttribute('aria-label') && el.getAttribute('aria-label').toLowerCase().includes('microphone'))
+                    (el.getAttribute('aria-label') && el.getAttribute('aria-label').toLowerCase().includes('mic'))
                 );
+                micBtns.forEach(b => console.log('[DEBUG-DUMP] Prejoin Mic:', b.outerHTML));
                 for (let btn of micBtns) {
-                    if (btn.getAttribute('aria-checked') === 'true' || btn.getAttribute('data-state') === 'unmuted') {
-                        return true;
-                    }
-                    if (btn.getAttribute('aria-label') && btn.getAttribute('aria-label').toLowerCase().includes('mute') && !btn.getAttribute('aria-label').toLowerCase().includes('unmute')) {
-                        return true; // it says "Mute microphone", meaning it is unmuted
-                    }
+                    const ariaChecked = btn.getAttribute('aria-checked');
+                    const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
+                    const dataState = btn.getAttribute('data-state');
+                    if (ariaChecked === 'false' || dataState === 'unmuted' || ariaLabel === 'mute' || ariaLabel === 'mute microphone') return true;
                 }
                 return false;
             });
-            
             if (isMicOn) {
-                console.log('[DEBUG] Mic is ON! Clicking the mute button directly...');
+                console.log('[DEBUG] Clicking mic on prejoin to mute...');
                 await page.evaluate(() => {
-                    const micBtns = Array.from(document.querySelectorAll('*')).filter(el => 
-                        (el.getAttribute('data-tid') === 'toggle-mute') ||
-                        (el.getAttribute('aria-label') && el.getAttribute('aria-label').toLowerCase().includes('microphone')) ||
-                        (el.getAttribute('aria-label') && el.getAttribute('aria-label').toLowerCase().includes('mute') && !el.getAttribute('aria-label').toLowerCase().includes('unmute'))
-                    );
-                    for (let btn of micBtns) {
-                        if (btn.getAttribute('aria-checked') === 'true' || btn.getAttribute('data-state') === 'unmuted' || (btn.getAttribute('aria-label') && btn.getAttribute('aria-label').toLowerCase().includes('mute') && !btn.getAttribute('aria-label').toLowerCase().includes('unmute'))) {
-                            btn.click();
-                        }
-                    }
+                    const btn = document.querySelector('[data-tid="toggle-mute"], button[aria-label*="Mute"], button[aria-label*="mic" i]');
+                    if (btn) btn.click();
                 });
                 await page.waitForTimeout(1000);
             }
@@ -253,25 +243,28 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     console.log('[DEBUG] Waiting to be admitted from lobby...');
     if (options.onStatus) await options.onStatus('WAITING_IN_LOBBY');
     let initLobbyWaitLoops = 0;
-    let admitted = false;
-    while (initLobbyWaitLoops < 120) {
-        
-          
-          const isAdmitted = await page.evaluate(() => {
-              // The strongest indicator that we are actually IN the meeting and not in the lobby
-              // is the presence of the actual in-meeting mic mute/unmute button or the Leave button.
-              // We also make sure we aren't looking at the pre-join screen anymore.
-              
-              const hasLeaveBtn = !!document.querySelector('[data-tid="leave-button"], [data-tid="call-hangup"], button[aria-label*="Leave" i]');
-              const hasMicBtn = !!document.querySelector('[data-tid="toggle-mute"], button[aria-label*="Mute" i], button[aria-label*="mic" i]');
-              const hasChatBtn = !!document.querySelector('[data-tid="chat-button"], button[aria-label*="Chat" i]');
-              
-              // We are admitted if we have at least 2 of the core meeting buttons (to avoid false positives from stray elements)
-              const score = (hasLeaveBtn ? 1 : 0) + (hasMicBtn ? 1 : 0) + (hasChatBtn ? 1 : 0);
-              return score >= 2;
-          });
-
-
+    let admitted = false;    while (!admitted && initLobbyWaitLoops < 120) { 
+        // Wait in lobby (up to 30 mins)
+        const isAdmitted = await page.evaluate(() => {
+            const text = document.body.innerText || '';
+            console.log('[DEBUG-DUMP] Lobby screen text:', text.replace(/
+/g, ' | '));
+            
+            const lowerText = text.toLowerCase();
+            const inLobby = lowerText.includes('waiting in the lobby') || 
+                            lowerText.includes('we\'ve let people') ||
+                            lowerText.includes('we\'ll let people') ||
+                            lowerText.includes('when the meeting starts') ||
+                            lowerText.includes('waiting for others to join') ||
+                            lowerText.includes('someone in the meeting should let you in soon');
+                            
+            if (inLobby) return false;
+            
+            const hasVideoGallery = !!document.querySelector('[data-tid="video-gallery"], [data-tid="calling-roster-stage"]');
+            if (hasVideoGallery) return true;
+            
+            return false;
+        });
         
         if (isAdmitted) {
             admitted = true;
@@ -299,29 +292,25 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     
     // Double check mic is muted inside the meeting
     try {
-        console.log('[DEBUG] Checking mic status...');
-        const inMeetingMic = page.locator('[data-tid="toggle-mute"], button[aria-label*="Mute"], button[aria-label*="mic" i]').first();
+        console.log('[DEBUG] Checking mic status inside meeting...');
+        await page.evaluate(() => {
+            const btns = document.querySelectorAll('[data-tid="toggle-mute"], button[aria-label*="Mute" i], button[aria-label*="mic" i]');
+            btns.forEach(btn => console.log('[DEBUG-DUMP] In-meeting Mic Btn:', btn.outerHTML));
+        });
+        const inMeetingMic = page.locator('[data-tid="toggle-mute"], button[aria-label*="Mute" i], button[aria-label*="mic" i]').first();
         if (await inMeetingMic.isVisible({ timeout: 5000 })) {
+            const ariaLabel = (await inMeetingMic.getAttribute('aria-label')) || '';
             const ariaChecked = await inMeetingMic.getAttribute('aria-checked');
-            const ariaLabel = await inMeetingMic.getAttribute('aria-label');
-            const isUnmuted = ariaChecked === 'true' || (ariaLabel && ariaLabel.toLowerCase().includes('mute') && !ariaLabel.toLowerCase().includes('unmute'));
-            
-            console.log('[DEBUG] Mic unmuted status:', isUnmuted);
+            const dataState = await inMeetingMic.getAttribute('data-state');
+            const isUnmuted = ariaChecked === 'false' || dataState === 'unmuted' || ariaLabel.toLowerCase() === 'mute' || ariaLabel.toLowerCase() === 'mute microphone';
+            console.log('[DEBUG] Mic unmuted status:', isUnmuted, ' (label:', ariaLabel, 'checked:', ariaChecked, 'state:', dataState, ')');
             if (isUnmuted) {
-                console.log('[DEBUG] Mic was left ON in meeting, turning it OFF now via click!');
+                console.log('[DEBUG] Clicking mic to mute it...');
                 await inMeetingMic.click({ force: true });
                 await page.waitForTimeout(2000);
-                // Verify click worked
-                const checkAria = await inMeetingMic.getAttribute('aria-checked');
-                console.log('[DEBUG] Mic status after click is now:', checkAria);
             }
-        } else {
-             console.log('[DEBUG] Mic button not found on screen.');
-             await page.keyboard.press('Control+Shift+M');
         }
-    } catch(e) {
-        console.log('[DEBUG] Mic verify error:', e.message);
-    }
+    } catch(e) { console.log('[DEBUG] Mic verify error:', e.message); }
 
     // Open Roster / Participants to monitor count
     try {
