@@ -88,7 +88,8 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
 
     const context = await browser.newContext({
       viewport: null,
-      permissions: ['microphone', 'camera']
+      permissions: ['microphone', 'camera'],
+      colorScheme: 'dark'  // Force dark mode in Teams
     });
 
     if (Array.isArray(cookies) && cookies.length) {
