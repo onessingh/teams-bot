@@ -369,53 +369,65 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         console.log('[DEBUG] Initial full view status:', isFullView);
 
         if (!isFullView) {
-            // Strategy 1: Physical mouse clicks on floating call widget (top-left of main area: x:350-450, y:100-160)
-            console.log('[DEBUG] Strategy1: Clicking floating call widget header (350, 110)...');
-            await page.mouse.click(350, 110);
-            await page.waitForTimeout(1500);
+            console.log('[DEBUG] Meeting is in compact floating card mode. Scanning for interactive elements...');
 
-            console.log('[DEBUG] Strategy1b: Double-clicking floating call card (380, 130)...');
-            await page.mouse.dblclick(380, 130);
-            await page.waitForTimeout(2000);
-
-            // Strategy 2: Click DOM elements matching floating card / call widget / active call banner
-            await page.evaluate(() => {
-                const candidates = Array.from(document.querySelectorAll('*')).filter(el => {
+            // Step 1: Find real physical bounding boxes of all interactive elements inside/near the floating card (x: 65-450, y: 75-380)
+            const clickableCoords = await page.evaluate(() => {
+                const results = [];
+                const all = Array.from(document.querySelectorAll('*'));
+                for (const el of all) {
                     const r = el.getBoundingClientRect();
-                    const text = (el.textContent || '').toLowerCase();
-                    const aria = (el.getAttribute('aria-label') || '').toLowerCase();
-                    const tid = (el.getAttribute('data-tid') || '').toLowerCase();
-                    // Detect floating widget or expand button
-                    const isCallWidget = tid.includes('pip') || tid.includes('call') || aria.includes('expand') || aria.includes('full') || text.includes('return to call') || text.includes('back to call');
-                    const isInTopLeftWidget = r.x > 250 && r.x < 550 && r.y > 60 && r.y < 300 && r.width > 100 && r.width < 500;
-                    return isCallWidget || isInTopLeftWidget;
-                });
-                console.log('[DEBUG-DOM] Found call widget candidates count:', candidates.length);
-                if (candidates.length > 0) {
-                    // Click top/first candidate
-                    candidates[0].click();
-                }
-            });
-            await page.waitForTimeout(2000);
-
-            // Strategy 3: Click "Calls" tab on Teams left app bar (x: 34, y: 320) to focus call
-            console.log('[DEBUG] Strategy3: Clicking Calls tab on left app bar (34, 320)...');
-            await page.mouse.click(34, 320);
-            await page.waitForTimeout(2000);
-
-            // Strategy 4: Click any "Return to call" / "Rejoin" button that appeared
-            await page.evaluate(() => {
-                const btns = Array.from(document.querySelectorAll('button, a, [role="button"]'));
-                for (const b of btns) {
-                    const t = (b.textContent || b.getAttribute('aria-label') || '').toLowerCase();
-                    if (t.includes('return') || t.includes('back to call') || t.includes('open call') || t.includes('maximize')) {
-                        b.click();
+                    // Filter elements within the floating card region
+                    if (r.x >= 60 && (r.x + r.width) <= 460 && r.y >= 70 && (r.y + r.height) <= 400 && r.width >= 10 && r.height >= 10) {
+                        const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+                        const tid = (el.getAttribute('data-tid') || '').toLowerCase();
+                        const tag = el.tagName.toLowerCase();
+                        // Prioritize buttons, clickable divs, or elements with aria/tid
+                        if (tag === 'button' || el.getAttribute('role') === 'button' || aria || tid || el.onclick) {
+                            results.push({
+                                cx: Math.round(r.x + r.width / 2),
+                                cy: Math.round(r.y + r.height / 2),
+                                label: aria || tid || el.textContent?.trim().slice(0, 20)
+                            });
+                        }
                     }
                 }
+                return results;
             });
-            await page.waitForTimeout(2000);
+            console.log('[DEBUG-BOX-COORDS] Found clickable element coordinates:', JSON.stringify(clickableCoords));
 
-            // Final check
+            // Step 2: Native physical Playwright clicks on the top-right header area of the card (where expand/maximize icons live)
+            const headerPoints = [
+                { x: 200, y: 95, desc: 'Card Header Title' },
+                { x: 380, y: 95, desc: 'Card Top-Right Icon' },
+                { x: 405, y: 95, desc: 'Card Far-Right Icon' },
+                { x: 200, y: 150, desc: 'Card Center Body' }
+            ];
+
+            for (const pt of headerPoints) {
+                console.log(`[DEBUG] Physical mouse click on ${pt.desc} (${pt.x}, ${pt.y})...`);
+                await page.mouse.click(pt.x, pt.y);
+                await page.waitForTimeout(1000);
+            }
+
+            // Also double-click the card center
+            console.log('[DEBUG] Double-clicking card center (200, 150)...');
+            await page.mouse.dblclick(200, 150);
+            await page.waitForTimeout(1500);
+
+            // Step 3: Physically click all detected coordinate points inside the card
+            for (const item of clickableCoords) {
+                console.log(`[DEBUG] Physical mouse click on detected element "${item.label}" at (${item.cx}, ${item.cy})...`);
+                await page.mouse.click(item.cx, item.cy);
+                await page.waitForTimeout(800);
+            }
+
+            // Step 4: Click the left app bar "Calls" icon (x: 34, y: 320)
+            console.log('[DEBUG] Clicking Calls tab on left app bar (34, 320)...');
+            await page.mouse.click(34, 320);
+            await page.waitForTimeout(1500);
+
+            // Check expansion status
             isFullView = await page.evaluate(() => {
                 const v = document.querySelector('video');
                 return (v && v.getBoundingClientRect().width > 500) || !!document.querySelector('[data-tid="calling-roster-stage"]');
