@@ -350,44 +350,112 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     // Expand the meeting from PiP mini-window to full view
     try {
         console.log('[DEBUG] Expanding meeting from PiP / full view...');
-        
-        // Check if meeting is already expanded (video stage width > 800)
-        let isExpanded = await page.evaluate(() => {
-            const v = document.querySelector('video');
-            return v && v.getBoundingClientRect().width > 800;
+
+        // === SCREENSHOT DEBUG: Push current screen state to Firebase ===
+        try {
+            const screenshotB64 = await page.screenshot({ encoding: 'base64' });
+            if (options.onFrame) await options.onFrame(screenshotB64);
+            console.log('[DEBUG] Screenshot pushed to dashboard for PiP debug.');
+        } catch(se) { console.log('[DEBUG] Screenshot push failed:', se.message); }
+
+        // === BUTTON DUMP: Log ALL buttons so we know what's available ===
+        const allBtns = await page.evaluate(() => {
+            return Array.from(document.querySelectorAll('button, [role="button"], a[role="link"]'))
+                .map(b => ({
+                    label: b.getAttribute('aria-label') || '',
+                    title: b.title || '',
+                    text: (b.textContent || '').trim().slice(0, 40),
+                    dataTid: b.getAttribute('data-tid') || '',
+                    rect: (() => { const r = b.getBoundingClientRect(); return `${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.width)}x${Math.round(r.height)}`; })()
+                }))
+                .filter(b => b.label || b.title || b.text);
         });
+        console.log('[DEBUG-DUMP] All buttons in meeting:', JSON.stringify(allBtns));
+
+        // === VIDEO ELEMENT DUMP ===
+        const videoInfo = await page.evaluate(() => {
+            return Array.from(document.querySelectorAll('video')).map(v => {
+                const r = v.getBoundingClientRect();
+                return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
+            });
+        });
+        console.log('[DEBUG-DUMP] Video elements:', JSON.stringify(videoInfo));
+
+        // Check if meeting is already expanded (video stage width > 800)
+        let isExpanded = videoInfo.some(v => v.w > 800);
+        console.log('[DEBUG] Is meeting already expanded (video w>800)?', isExpanded);
 
         if (!isExpanded) {
-            console.log('[DEBUG] Meeting is in PiP mode. Attempting to expand...');
-            
-            // 1. Try DOM expand buttons first
-            await page.evaluate(() => {
+            console.log('[DEBUG] Meeting is in PiP mode. Attempting multi-strategy expand...');
+
+            // Strategy 1: DOM button click — "open call in full", "pop out", "return to meeting", "maximize"
+            const expandClicked = await page.evaluate(() => {
+                const keywords = ['open call in full', 'pop out', 'return to meeting', 'maximize', 'open in full', 'go to call', 'back to call', 'rejoin call'];
                 const btns = Array.from(document.querySelectorAll('button, [role="button"]'));
+                let clicked = false;
                 for (const btn of btns) {
-                    const label = (btn.getAttribute('aria-label') || btn.getAttribute('title') || '').toLowerCase();
-                    if (label.includes('search') || label.includes('app bar') || label.includes('profile')) continue;
-                    if (label.includes('open call in full') || label.includes('pop out') || label.includes('return to meeting')) {
+                    const label = (btn.getAttribute('aria-label') || btn.getAttribute('title') || btn.textContent || '').toLowerCase();
+                    if (keywords.some(k => label.includes(k))) {
+                        console.log('[DEBUG] Strategy1: clicking expand btn:', label);
                         btn.click();
+                        clicked = true;
                     }
                 }
+                return clicked;
             });
-            await page.waitForTimeout(1500);
+            await page.waitForTimeout(2000);
 
-            // 2. Physical mouse clicks on PiP title bar (x: 200, y: 95) and expand icon (x: 320, y: 95)
-            console.log('[DEBUG] Physical mouse click on PiP header title bar (200, 95)...');
-            await page.mouse.click(200, 95);
-            await page.waitForTimeout(1500);
+            // Strategy 2: Click the PiP video element itself (double-click to expand)
+            if (!expandClicked && videoInfo.length > 0) {
+                const pip = videoInfo[0];
+                const cx = Math.round(pip.x + pip.w / 2);
+                const cy = Math.round(pip.y + pip.h / 2);
+                console.log(`[DEBUG] Strategy2: double-clicking PiP video at (${cx}, ${cy})...`);
+                await page.mouse.dblclick(cx, cy);
+                await page.waitForTimeout(2000);
+            }
 
-            console.log('[DEBUG] Physical mouse click on PiP expand icon (320, 95)...');
-            await page.mouse.click(320, 95);
-            await page.waitForTimeout(1500);
-            
-            // Check expansion status again
+            // Strategy 3: Keyboard shortcut Ctrl+Shift+F (Teams focus mode)
+            console.log('[DEBUG] Strategy3: pressing Ctrl+Shift+F...');
+            await page.keyboard.press('Control+Shift+F');
+            await page.waitForTimeout(2000);
+
+            // Strategy 4: Try clicking any PiP header region (top of window, y=30-100)
+            // Find a small div/container that looks like the PiP mini-window
+            const pipInfo = await page.evaluate(() => {
+                const candidates = Array.from(document.querySelectorAll('div[style*="position: fixed"], div[style*="position:fixed"]'));
+                return candidates.map(el => {
+                    const r = el.getBoundingClientRect();
+                    return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), tag: el.tagName };
+                }).filter(c => c.w > 100 && c.w < 700 && c.h > 50 && c.h < 500);
+            });
+            console.log('[DEBUG-DUMP] PiP candidate containers:', JSON.stringify(pipInfo));
+
+            if (pipInfo.length > 0) {
+                const pip2 = pipInfo[0];
+                // Click on the top-right corner of PiP (where maximize/popout icon usually is)
+                const bx = Math.round(pip2.x + pip2.w - 30);
+                const by = Math.round(pip2.y + 15);
+                console.log(`[DEBUG] Strategy4: clicking PiP top-right corner at (${bx}, ${by})...`);
+                await page.mouse.click(bx, by);
+                await page.waitForTimeout(2000);
+                // Also try second-to-last icon
+                await page.mouse.click(bx - 30, by);
+                await page.waitForTimeout(2000);
+            }
+
+            // Final check
             isExpanded = await page.evaluate(() => {
-                const v = document.querySelector('video');
-                return v && v.getBoundingClientRect().width > 800;
+                return Array.from(document.querySelectorAll('video')).some(v => v.getBoundingClientRect().width > 800);
             });
-            console.log('[DEBUG] Meeting expansion status after clicks:', isExpanded);
+            console.log('[DEBUG] Meeting expansion status after all strategies:', isExpanded);
+
+            // Take another screenshot after expansion attempts
+            try {
+                const screenshotB64_2 = await page.screenshot({ encoding: 'base64' });
+                if (options.onFrame) await options.onFrame(screenshotB64_2);
+                console.log('[DEBUG] Post-expand screenshot pushed to dashboard.');
+            } catch(se) { console.log('[DEBUG] Post-expand screenshot push failed:', se.message); }
         }
 
         // Close All contacts if opened
