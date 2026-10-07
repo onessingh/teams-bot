@@ -115,6 +115,10 @@ async function processItem(item) {
       }
     });
 
+    if (!result || !result.outputPath) {
+      throw new Error('Recording ended before output file was created.');
+    }
+
     try {
       if (fs.existsSync('intro.mp4')) {
         console.log('[INFO] Normalizing intro.mp4 for concatenation...');
