@@ -57,6 +57,65 @@ async function stopRecorder(proc) {
   });
 }
 
+async function performInlineLogin(page, creds) {
+  if (!creds || !creds.email || !creds.password) {
+    console.log('[DEBUG] No credentials available to perform inline login.');
+    return false;
+  }
+  console.log('[DEBUG] Performing inline login for:', creds.email);
+  try {
+    const signInBtn = page.locator('button[data-tid="prejoin-signin-button"], a:has-text("Sign in"), button:has-text("Sign in"), button:has-text("Sign in to join")').first();
+    if (await signInBtn.isVisible({ timeout: 3000 })) {
+      console.log('[DEBUG] Clicking Sign in button on prejoin...');
+      await signInBtn.click({ force: true });
+      await page.waitForTimeout(4000);
+    }
+
+    const emailInput = page.locator('input[type="email"], input[name="loginfmt"]').first();
+    if (await emailInput.isVisible({ timeout: 5000 })) {
+      console.log('[DEBUG] Entering email...');
+      await emailInput.fill(creds.email);
+      await page.waitForTimeout(500);
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(2000);
+      try { await page.click('#idSIButton9, input[type="submit"]', { timeout: 2000, force: true }); } catch(e){}
+    }
+
+    try {
+      const bypass = page.locator('#idA_PWD_SwitchToPassword, #idA_PWD_SwitchToCredPicker').first();
+      if (await bypass.isVisible({ timeout: 3000 })) {
+        console.log('[DEBUG] Clicking "Use your password" bypass...');
+        await bypass.click({ force: true });
+        await page.waitForTimeout(2000);
+      }
+    } catch(e){}
+
+    const pwdInput = page.locator('input[type="password"], input[name="passwd"]').first();
+    if (await pwdInput.isVisible({ timeout: 10000 })) {
+      console.log('[DEBUG] Entering password...');
+      await pwdInput.fill(creds.password);
+      await page.waitForTimeout(500);
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(2000);
+      try { await page.click('#idSIButton9, input[type="submit"]', { timeout: 2000, force: true }); } catch(e){}
+    }
+
+    try {
+      const stayBtn = page.locator('#idSIButton9, input[value="Yes"]').first();
+      if (await stayBtn.isVisible({ timeout: 3000 })) {
+        await stayBtn.click({ force: true });
+        await page.waitForTimeout(3000);
+      }
+    } catch(e){}
+
+    console.log('[DEBUG] Inline login complete.');
+    return true;
+  } catch(e) {
+    console.log('[DEBUG] Inline login error:', e.message);
+    return false;
+  }
+}
+
 async function recordLiveClass(url, outputPath, cookies, options = {}) {
   const maxMs = options.maxMs || MAX_MS;
   let isNativeFullScreen = false;
@@ -166,13 +225,23 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         }
 
 
-        // If cookies are invalid, Teams might ask for a guest name before enabling the Join button
+        // CRITICAL FIX FOR SOL STUDENT ACCOUNTS:
+        // If session cookies are expired, Teams shows a guest name input field.
+        // SOL meetings REJECT guest join! We MUST perform inline login instead of joining as Guest.
         try {
             const nameInput = page.locator('input[data-tid="prejoin-display-name-input"]');
             if (await nameInput.isVisible({ timeout: 2000 })) {
-                console.log('[DEBUG] Guest name input found. Typing name to enable Join button...');
-                await nameInput.fill('Class Bot');
-                await page.waitForTimeout(1000);
+                console.log('[DEBUG] ⚠️ Guest input detected! Session cookies expired. Triggering inline login with saved SOL creds...');
+                if (options.creds && options.creds.email && options.creds.password) {
+                    const loggedIn = await performInlineLogin(page, options.creds);
+                    if (loggedIn) {
+                        console.log('[DEBUG] Reloading meeting URL as authenticated SOL student...');
+                        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 });
+                        await page.waitForTimeout(5000);
+                    }
+                } else {
+                    console.log('[DEBUG] ⚠️ No creds available for inline login! SOL meeting will reject Guest join.');
+                }
             }
         } catch (e) {}
 
