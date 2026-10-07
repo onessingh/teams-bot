@@ -369,60 +369,93 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         console.log('[DEBUG] Initial full view status:', isFullView);
 
         if (!isFullView) {
-            console.log('[DEBUG] Meeting is in compact floating card mode. Scanning for interactive elements...');
+            console.log('[DEBUG] Meeting is in compact floating card mode. Dynamically scanning entire viewport for card bounds...');
 
-            // Step 1: Find real physical bounding boxes of all interactive elements inside/near the floating card (x: 65-450, y: 75-380)
-            const clickableCoords = await page.evaluate(() => {
+            // Step 1: Detect floating card container bounds dynamically across the entire viewport
+            const cardInfo = await page.evaluate(() => {
                 const results = [];
-                const all = Array.from(document.querySelectorAll('*'));
+                const all = Array.from(document.querySelectorAll('div, section, main, [role="region"], [role="dialog"]'));
                 for (const el of all) {
                     const r = el.getBoundingClientRect();
-                    // Filter elements within the floating card region
-                    if (r.x >= 60 && (r.x + r.width) <= 460 && r.y >= 70 && (r.y + r.height) <= 400 && r.width >= 10 && r.height >= 10) {
-                        const aria = (el.getAttribute('aria-label') || '').toLowerCase();
-                        const tid = (el.getAttribute('data-tid') || '').toLowerCase();
-                        const tag = el.tagName.toLowerCase();
-                        // Prioritize buttons, clickable divs, or elements with aria/tid
-                        if (tag === 'button' || el.getAttribute('role') === 'button' || aria || tid || el.onclick) {
-                            results.push({
-                                cx: Math.round(r.x + r.width / 2),
-                                cy: Math.round(r.y + r.height / 2),
-                                label: aria || tid || el.textContent?.trim().slice(0, 20)
-                            });
-                        }
+                    const style = window.getComputedStyle(el);
+                    const isFloating = style.position === 'fixed' || style.position === 'absolute' || parseInt(style.zIndex, 10) > 20;
+                    // Floating card dimensions: width 150-600px, height 100-500px
+                    if (isFloating && r.width >= 150 && r.width <= 600 && r.height >= 100 && r.height <= 500 && r.x >= 0 && r.y >= 0) {
+                        results.push({
+                            x: Math.round(r.x),
+                            y: Math.round(r.y),
+                            w: Math.round(r.width),
+                            h: Math.round(r.height),
+                            tag: el.tagName,
+                            text: el.textContent?.trim().slice(0, 30)
+                        });
                     }
                 }
                 return results;
             });
-            console.log('[DEBUG-BOX-COORDS] Found clickable element coordinates:', JSON.stringify(clickableCoords));
+            console.log('[DEBUG-CARD-INFO] Detected floating cards:', JSON.stringify(cardInfo));
 
-            // Step 2: Native physical Playwright clicks on the top-right header area of the card (where expand/maximize icons live)
-            const headerPoints = [
-                { x: 200, y: 95, desc: 'Card Header Title' },
-                { x: 380, y: 95, desc: 'Card Top-Right Icon' },
-                { x: 405, y: 95, desc: 'Card Far-Right Icon' },
-                { x: 200, y: 150, desc: 'Card Center Body' }
-            ];
+            // Step 2: Extract expand buttons anywhere in DOM (matching expand / popout / full / maximize)
+            const expandBtnCoords = await page.evaluate(() => {
+                const btns = Array.from(document.querySelectorAll('button, [role="button"], a, svg'));
+                const list = [];
+                for (const b of btns) {
+                    const r = b.getBoundingClientRect();
+                    const label = (b.getAttribute('aria-label') || b.getAttribute('title') || b.getAttribute('data-tid') || b.textContent || '').toLowerCase();
+                    if (r.width > 5 && r.height > 5 && (label.includes('expand') || label.includes('full') || label.includes('popout') || label.includes('maximize') || label.includes('return') || label.includes('pip'))) {
+                        list.push({
+                            cx: Math.round(r.x + r.width / 2),
+                            cy: Math.round(r.y + r.height / 2),
+                            label: label.slice(0, 30)
+                        });
+                    }
+                }
+                return list;
+            });
+            console.log('[DEBUG-EXPAND-BTNS] Found expand button elements:', JSON.stringify(expandBtnCoords));
 
-            for (const pt of headerPoints) {
-                console.log(`[DEBUG] Physical mouse click on ${pt.desc} (${pt.x}, ${pt.y})...`);
-                await page.mouse.click(pt.x, pt.y);
+            // Step 3: Physically click detected expand buttons
+            for (const item of expandBtnCoords) {
+                console.log(`[DEBUG] Physical mouse click on expand button "${item.label}" at (${item.cx}, ${item.cy})...`);
+                await page.mouse.click(item.cx, item.cy);
                 await page.waitForTimeout(1000);
             }
 
-            // Also double-click the card center
-            console.log('[DEBUG] Double-clicking card center (200, 150)...');
-            await page.mouse.dblclick(200, 150);
-            await page.waitForTimeout(1500);
+            // Step 4: Physically click top-right corner of all detected floating cards
+            for (const card of cardInfo) {
+                const topRightX = card.x + card.w - 15;
+                const topRightY = card.y + 15;
+                const headerCenterX = card.x + Math.round(card.w / 2);
+                const headerCenterY = card.y + 15;
 
-            // Step 3: Physically click all detected coordinate points inside the card
-            for (const item of clickableCoords) {
-                console.log(`[DEBUG] Physical mouse click on detected element "${item.label}" at (${item.cx}, ${item.cy})...`);
-                await page.mouse.click(item.cx, item.cy);
+                console.log(`[DEBUG] Physical mouse click on card top-right expand icon (${topRightX}, ${topRightY})...`);
+                await page.mouse.click(topRightX, topRightY);
+                await page.waitForTimeout(1000);
+
+                console.log(`[DEBUG] Physical mouse click on card header center (${headerCenterX}, ${headerCenterY})...`);
+                await page.mouse.click(headerCenterX, headerCenterY);
+                await page.waitForTimeout(800);
+
+                console.log(`[DEBUG] Double-clicking card header (${headerCenterX}, ${headerCenterY})...`);
+                await page.mouse.dblclick(headerCenterX, headerCenterY);
+                await page.waitForTimeout(1000);
+            }
+
+            // Step 5: Fallback hardcoded physical clicks at exact coordinates from user screenshot (media_1791363100726.png)
+            // Screenshot shows card at x: 234-384, y: 368-615 -> Expand icon ↖↗ at (373, 388), Header at (310, 388)
+            const fallbackPoints = [
+                { x: 373, y: 388, desc: 'Exact Expand Icon ↖↗ from Screenshot' },
+                { x: 365, y: 388, desc: 'Top-Right Icon Area' },
+                { x: 310, y: 388, desc: 'Card Header Bar' },
+                { x: 380, y: 95, desc: 'Top position Expand Icon' }
+            ];
+            for (const pt of fallbackPoints) {
+                console.log(`[DEBUG] Fallback click on ${pt.desc} (${pt.x}, ${pt.y})...`);
+                await page.mouse.click(pt.x, pt.y);
                 await page.waitForTimeout(800);
             }
 
-            // Step 4: Click the left app bar "Calls" icon (x: 34, y: 320)
+            // Step 6: Click "Calls" tab on left app bar (34, 320)
             console.log('[DEBUG] Clicking Calls tab on left app bar (34, 320)...');
             await page.mouse.click(34, 320);
             await page.waitForTimeout(1500);
