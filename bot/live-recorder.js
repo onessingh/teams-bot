@@ -360,36 +360,78 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             console.log('[DEBUG] Pre-expand screenshot pushed.');
         } catch(se) {}
 
-        // CORRECT isFullView check: meeting toolbar with Leave/Mic/Share = already in full meeting view.
-        // DO NOT just check for video width — when "Waiting for others to join" there's no video yet.
+        // Check if meeting is in full view or compact floating card mode.
+        // CRITICAL FIX: The compact floating widget also has a "Leave" button inside it!
+        // We must check if a floating call card (width < 600) exists FIRST.
         const fullViewStatus = await page.evaluate(() => {
-            // Check 1: meeting toolbar exists (has Leave/Mic/Share buttons) = full meeting view
-            const toolbar = document.querySelector('[data-tid="meeting-toolbar"], [data-tid="calling-status-bar"]');
-            if (toolbar && toolbar.getBoundingClientRect().width > 100) return { full: true, reason: 'toolbar' };
+            // Check 1: Is a compact floating call widget / PiP container active on screen?
+            const pipWidget = document.querySelector('[data-tid="cw-pip-container"], [data-tid="calling-widget"], [data-tid="active-call-widget"], [class*="pip-"], [class*="callingWidget"], [class*="calling-widget"]');
+            if (pipWidget) {
+                const r = pipWidget.getBoundingClientRect();
+                if (r.width > 50 && r.width < 600 && r.height > 50 && r.height < 500) {
+                    return { full: false, reason: 'pip-widget-active', x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
+                }
+            }
 
-            // Check 2: Leave button visible (definitive proof we're in full meeting UI)
-            const leaveBtn = document.querySelector('button[data-tid="hangup-button"], button[aria-label*="Leave" i], button[aria-label*="leave" i]');
-            if (leaveBtn && leaveBtn.getBoundingClientRect().width > 0) return { full: true, reason: 'leave-button' };
+            // Check 2: Dynamically scan for any fixed/absolute floating call overlay card
+            const allElements = Array.from(document.querySelectorAll('div, section, region, main'));
+            for (const el of allElements) {
+                const r = el.getBoundingClientRect();
+                const style = window.getComputedStyle(el);
+                const isFloating = style.position === 'fixed' || style.position === 'absolute' || (parseInt(style.zIndex, 10) || 0) > 10;
+                const text = (el.textContent || '').toLowerCase();
+                // Floating call widget features: width 150-500px, height 80-400px, contains timer/call info
+                if (isFloating && r.width >= 150 && r.width <= 500 && r.height >= 80 && r.height <= 400 && r.x >= 0 && r.y >= 0) {
+                    if (text.includes('00:') || text.includes('01:') || text.includes('02:') || text.includes('03:') || text.includes('04:') || text.includes('05:') || text.includes('master') || text.includes('meeting') || text.includes('leave')) {
+                        return { full: false, reason: 'floating-card-detected', x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
+                    }
+                }
+            }
 
-            // Check 3: Large video element
+            // Check 3: Full meeting stage / video gallery spanning large screen area (>600px width)
+            const stage = document.querySelector('[data-tid="calling-roster-stage"], [data-tid="video-gallery"], [data-tid="meeting-canvas"]');
+            if (stage && stage.getBoundingClientRect().width > 600) return { full: true, reason: 'full-stage' };
+
+            // Check 4: Large video element (>500px width)
             const v = document.querySelector('video');
-            if (v && v.getBoundingClientRect().width > 500) return { full: true, reason: 'video' };
+            if (v && v.getBoundingClientRect().width > 500) return { full: true, reason: 'large-video' };
 
-            // Check 4: Roster stage
-            const stage = document.querySelector('[data-tid="calling-roster-stage"], [data-tid="video-gallery"]');
-            if (stage && stage.getBoundingClientRect().width > 200) return { full: true, reason: 'roster-stage' };
+            // Check 5: Main meeting toolbar spanning large width (>600px)
+            const toolbar = document.querySelector('[data-tid="meeting-toolbar"]');
+            if (toolbar && toolbar.getBoundingClientRect().width > 600) return { full: true, reason: 'full-toolbar' };
 
-            // Not in full view — need to expand
-            return { full: false, reason: 'none' };
+            return { full: false, reason: 'no-full-indicators' };
         });
+
         console.log('[DEBUG] Full view status:', JSON.stringify(fullViewStatus));
         let isFullView = fullViewStatus.full;
 
         if (!isFullView) {
-            console.log('[DEBUG] Meeting is in compact widget mode. Trying to expand...');
+            console.log('[DEBUG] Meeting is in compact floating card mode. Attempting to expand...');
 
-            // Strategy 1: Click Teams calling widget / PiP container via data-tid
-            console.log('[DEBUG] Strategy 1: Clicking Teams calling widget via data-tid selectors...');
+            // If we detected card bounds, click directly on its expand area and header
+            if (fullViewStatus.x !== undefined && fullViewStatus.w !== undefined) {
+                const cardX = fullViewStatus.x;
+                const cardY = fullViewStatus.y;
+                const cardW = fullViewStatus.w;
+                const cardH = fullViewStatus.h;
+
+                console.log(`[DEBUG] Target floating card at (${cardX}, ${cardY}, ${cardW}x${cardH}). Clicking top-right expand icon area...`);
+                // Top-right corner of card (where ↖↗ expand icon is situated)
+                await page.mouse.click(cardX + cardW - 20, cardY + 15);
+                await page.waitForTimeout(1200);
+
+                console.log(`[DEBUG] Clicking header bar center (${cardX + Math.round(cardW / 2)}, ${cardY + 15})...`);
+                await page.mouse.click(cardX + Math.round(cardW / 2), cardY + 15);
+                await page.waitForTimeout(1000);
+
+                console.log(`[DEBUG] Double-clicking header bar center...`);
+                await page.mouse.dblclick(cardX + Math.round(cardW / 2), cardY + 15);
+                await page.waitForTimeout(1500);
+            }
+
+            // Strategy 1: DOM click on calling widget / PiP elements
+            console.log('[DEBUG] Strategy 1: Triggering DOM click on Teams calling widget elements...');
             const widgetClicked = await page.evaluate(() => {
                 const selectors = [
                     '[data-tid="cw-pip-container"]',
@@ -408,96 +450,39 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                 if (byClass) { byClass.click(); return 'class-match'; }
                 return null;
             });
-            console.log('[DEBUG] Widget click result:', widgetClicked);
+            console.log('[DEBUG] Widget DOM click result:', widgetClicked);
             await page.waitForTimeout(2000);
 
-            // Re-check using correct toolbar detection
-            const s1 = await page.evaluate(() => {
-                const toolbar = document.querySelector('[data-tid="meeting-toolbar"], [data-tid="calling-status-bar"]');
-                if (toolbar && toolbar.getBoundingClientRect().width > 100) return true;
-                const leaveBtn = document.querySelector('button[data-tid="hangup-button"], button[aria-label*="Leave" i]');
-                if (leaveBtn && leaveBtn.getBoundingClientRect().width > 0) return true;
-                const v = document.querySelector('video');
-                return !!(v && v.getBoundingClientRect().width > 500);
-            });
-            console.log('[DEBUG] After Strategy 1 - full view:', s1);
-            isFullView = s1;
-
-            if (!isFullView) {
-                // Strategy 2: Scan DOM for floating calling widget card (not tiny avatar circles)
-                console.log('[DEBUG] Strategy 2: Scanning DOM for floating calling widget...');
-                const cardInfo = await page.evaluate(() => {
-                    const results = [];
-                    const all = Array.from(document.querySelectorAll('*'));
-                    for (const el of all) {
+            // Strategy 2: Look for "Return to call" text link or banner anywhere in DOM
+            console.log('[DEBUG] Strategy 2: Looking for "Return to call" banner...');
+            const returnBtn = await page.evaluate(() => {
+                const all = Array.from(document.querySelectorAll('button, a, span, div'));
+                for (const el of all) {
+                    const t = (el.textContent || '').trim().toLowerCase();
+                    const label = (el.getAttribute('aria-label') || '').toLowerCase();
+                    if (t.includes('return to call') || label.includes('return to call')) {
                         const r = el.getBoundingClientRect();
-                        const style = window.getComputedStyle(el);
-                        const pos = style.position;
-                        const zi = parseInt(style.zIndex, 10) || 0;
-                        if ((pos === 'fixed' || pos === 'absolute') && zi >= 10
-                            && r.width >= 120 && r.width <= 500
-                            && r.height >= 80 && r.height <= 400
-                            && r.x >= 0 && r.y >= 0
-                            && r.right <= window.innerWidth && r.bottom <= window.innerHeight) {
-                            const tid = el.getAttribute('data-tid') || '';
-                            const text = (el.textContent || '').trim().slice(0, 60);
-                            results.push({ x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), tid, text });
-                        }
+                        if (r.width > 0) { el.click(); return true; }
                     }
-                    const seen = new Set();
-                    return results.filter(c => {
-                        const key = `${c.x},${c.y},${c.w},${c.h}`;
-                        if (seen.has(key)) return false;
-                        seen.add(key); return true;
-                    }).slice(0, 5);
-                });
-                console.log('[DEBUG-CARD-SCAN] Floating elements:', JSON.stringify(cardInfo));
-
-                for (const card of cardInfo) {
-                    console.log(`[DEBUG] Clicking top-right of card (${card.w}x${card.h}) tid=${card.tid} at (${card.x + card.w - 12}, ${card.y + 12})`);
-                    await page.mouse.click(card.x + card.w - 12, card.y + 12);
-                    await page.waitForTimeout(1500);
                 }
+                return false;
+            });
+            console.log('[DEBUG] Return-to-call click result:', returnBtn);
+            await page.waitForTimeout(2000);
 
-                const s2 = await page.evaluate(() => {
-                    const toolbar = document.querySelector('[data-tid="meeting-toolbar"]');
-                    if (toolbar && toolbar.getBoundingClientRect().width > 100) return true;
-                    const leaveBtn = document.querySelector('button[aria-label*="Leave" i]');
-                    if (leaveBtn && leaveBtn.getBoundingClientRect().width > 0) return true;
-                    const v = document.querySelector('video');
-                    return !!(v && v.getBoundingClientRect().width > 500);
-                });
-                console.log('[DEBUG] After Strategy 2 - full view:', s2);
-                isFullView = s2;
-            }
-
-            if (!isFullView) {
-                // Strategy 3: "Return to call" text link
-                console.log('[DEBUG] Strategy 3: Looking for "Return to call" text link...');
-                const returnBtn = await page.evaluate(() => {
-                    const all = Array.from(document.querySelectorAll('button, a, span, div'));
-                    for (const el of all) {
-                        const t = (el.textContent || '').trim().toLowerCase();
-                        const label = (el.getAttribute('aria-label') || '').toLowerCase();
-                        if (t.includes('return to call') || label.includes('return to call')) {
-                            const r = el.getBoundingClientRect();
-                            if (r.width > 0) { el.click(); return true; }
-                        }
-                    }
-                    return false;
-                });
-                console.log('[DEBUG] Return-to-call click result:', returnBtn);
-                await page.waitForTimeout(2000);
-                isFullView = returnBtn;
-            }
-
-            console.log('[DEBUG] Post-expand full view status:', isFullView ? '✅ FULL VIEW ACTIVE!' : '⚠️ COMPACT WIDGET STILL ACTIVE');
+            // Re-check status after expansion attempts
+            const postCheck = await page.evaluate(() => {
+                const stage = document.querySelector('[data-tid="calling-roster-stage"], [data-tid="video-gallery"], [data-tid="meeting-canvas"]');
+                if (stage && stage.getBoundingClientRect().width > 600) return true;
+                const toolbar = document.querySelector('[data-tid="meeting-toolbar"]');
+                return !!(toolbar && toolbar.getBoundingClientRect().width > 600);
+            });
+            console.log('[DEBUG] Post-expand full view status:', postCheck ? '✅ FULL VIEW ACTIVE!' : '⚠️ COMPACT WIDGET STILL ACTIVE');
         } else {
             console.log('[DEBUG] ✅ Already in full meeting view — no expand needed.');
         }
 
-        // IMPORTANT: Close any panel that may have been opened by previous bad runs
-        // (e.g. Teams Store opened by wrong Ctrl+Shift+F clicks in prior sessions)
+        // Close any side panel or overlay (e.g. apps/store/contacts) that may be active in the background shell
         await page.keyboard.press('Escape');
         await page.waitForTimeout(800);
 
