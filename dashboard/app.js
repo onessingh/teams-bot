@@ -548,7 +548,7 @@ onValue(ref(db, 'config'), (snap) => {
             if (config[k] && config[k].email) {
                 optionsHtml += `<option value="${k}">${k} (${config[k].email})</option>`;
                 savedHtml += `
-                    <div class="flex items-center justify-between bg-gray-50 p-2 rounded-lg border border-gray-200">
+                    <div class="acc-card flex items-center justify-between bg-gray-50 hover:bg-gray-100 p-2 rounded-lg border border-gray-200 cursor-pointer transition-colors" data-key="${k}" data-email="${config[k].email || ''}" data-pwd="${config[k].password || ''}">
                         <div class="truncate pr-2">
                             <span class="font-bold text-gray-800">${k}</span>
                             <div class="text-[11px] text-gray-500 truncate">${config[k].email}</div>
@@ -569,8 +569,21 @@ onValue(ref(db, 'config'), (snap) => {
         if (recSel) recSel.innerHTML = optionsHtml;
         if (savedList) {
             savedList.innerHTML = savedHtml;
+            savedList.querySelectorAll('.acc-card').forEach(card => {
+                card.addEventListener('click', (e) => {
+                    if (e.target.closest('.delete-acc-btn')) return;
+                    const key = card.getAttribute('data-key');
+                    const email = card.getAttribute('data-email');
+                    const pwd = card.getAttribute('data-pwd');
+                    const accKeyInput = document.getElementById('ms-account-key');
+                    if (accKeyInput) accKeyInput.value = key;
+                    if (msEmail) msEmail.value = email;
+                    if (msPassword) msPassword.value = pwd;
+                });
+            });
             savedList.querySelectorAll('.delete-acc-btn').forEach(btn => {
                 btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
                     const accKey = e.target.closest('.delete-acc-btn').getAttribute('data-key');
                     if (confirm(`Are you sure you want to delete saved account '${accKey}'?`)) {
                         await remove(ref(db, 'config/' + accKey));
