@@ -285,7 +285,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             if (hasVideoGallery) return true;
             
             // Check for instant drop/kick
-            if (lowerText.includes('rejoin') && lowerText.includes('learn about teams')) {
+            if (lowerText.includes('rejoin') || lowerText.includes('returning to teams meetings') || lowerText.includes('did you leave by mistake')) {
                 return 'dropped';
             }
             
