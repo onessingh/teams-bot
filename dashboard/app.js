@@ -125,8 +125,9 @@ onValue(ref(db, 'queue'), (snapshot) => {
                 <div class="flex justify-between items-start mb-1 pr-16">
                     <span class="font-bold text-sm text-gray-800 truncate pr-2" title="${item.title}">${item.title}</span>
                 </div>
-                <div class="mb-1">
+                <div class="mb-1 flex items-center gap-2 flex-wrap">
                     <span class="text-[11px] font-black uppercase tracking-wider ${statusColor} shrink-0" id="status-${item.id}">${statusText}</span>
+                    <span class="text-[10px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded font-bold border border-blue-100">👤 ${item.accountId || 'default'}</span>
                 </div>
                 <div class="text-[11px] text-gray-500 flex justify-between items-center pr-8">
                     <span>${item.scheduledTime ? 'Scheduled: ' + new Date(item.scheduledTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Added: ' + new Date(item.addedAt).toLocaleString()}</span>
@@ -442,8 +443,9 @@ onValue(ref(db, 'live_queue'), (snapshot) => {
                 <div class="flex justify-between items-start mb-1 pr-16">
                     <span class="font-bold text-sm text-gray-800 truncate pr-2" title="${item.title}">${item.title}</span>
                 </div>
-                <div class="mb-1">
+                <div class="mb-1 flex items-center gap-2 flex-wrap">
                     <span class="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${statusColor} shrink-0">${statusText}</span>
+                    <span class="text-[10px] bg-red-50 text-red-700 px-2 py-0.5 rounded font-bold border border-red-100">👤 ${item.accountId || 'default'}</span>
                 </div>
                 <div class="text-[11px] text-gray-500 flex justify-between items-center pr-8">
                       <span>${item.scheduledTime ? 'Scheduled: ' + new Date(item.scheduledTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Added: ' + new Date(item.addedAt).toLocaleString()}</span>
@@ -532,25 +534,50 @@ setInterval(() => {
 }, 1000);
 
 
-// Populate Live Accounts Dropdown
+// Populate Live Accounts Dropdown & Saved Accounts List
 onValue(ref(db, 'config'), (snap) => {
     const config = snap.val();
     const sel = document.getElementById('live-account');
     const recSel = document.getElementById('recorded-account');
+    const savedList = document.getElementById('saved-accounts-list');
     
     if (config) {
         let optionsHtml = '';
+        let savedHtml = '';
         Object.keys(config).forEach(k => {
             if (config[k] && config[k].email) {
                 optionsHtml += `<option value="${k}">${k} (${config[k].email})</option>`;
+                savedHtml += `
+                    <div class="flex items-center justify-between bg-gray-50 p-2 rounded-lg border border-gray-200">
+                        <div class="truncate pr-2">
+                            <span class="font-bold text-gray-800">${k}</span>
+                            <div class="text-[11px] text-gray-500 truncate">${config[k].email}</div>
+                        </div>
+                        <button class="delete-acc-btn bg-red-50 hover:bg-red-100 text-red-600 px-2.5 py-1 rounded text-[10px] font-bold border border-red-200 transition-colors shrink-0 flex items-center gap-1" data-key="${k}">
+                            🗑️ Remove
+                        </button>
+                    </div>
+                `;
             }
         });
         if (optionsHtml === '') {
             optionsHtml = '<option value="teams_creds">Default Account</option>';
+            savedHtml = '<div class="text-gray-400 italic">No saved accounts found.</div>';
         }
         
         if (sel) sel.innerHTML = optionsHtml;
         if (recSel) recSel.innerHTML = optionsHtml;
+        if (savedList) {
+            savedList.innerHTML = savedHtml;
+            savedList.querySelectorAll('.delete-acc-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    const accKey = e.target.closest('.delete-acc-btn').getAttribute('data-key');
+                    if (confirm(`Are you sure you want to delete saved account '${accKey}'?`)) {
+                        await remove(ref(db, 'config/' + accKey));
+                    }
+                });
+            });
+        }
     }
 });
 
