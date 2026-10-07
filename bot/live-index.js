@@ -49,31 +49,38 @@ async function handleLoginRequest() {
 
 async function claimNextWaiting() {
     const snap = await db.ref('live_queue').orderByChild('addedAt').once('value');
-    let selected = null;
+    const candidates = [];
     const now = Date.now();
-    snap.forEach(child => {
-      const item = child.val() || {};
-      if (!selected && item.status === 'WAITING' && item.url) {
-        if (item.scheduledTime) {
-            if (now >= item.scheduledTime - (25 * 60 * 1000)) {
-                selected = { id: child.key, ...item };
-            }
-        } else {
-            selected = { id: child.key, ...item };
-        }
-      }
-    });
-    if (!selected) return null;
-  
-    const itemRef = db.ref(`live_queue/${selected.id}`);
-    const currentSnap = await itemRef.once('value');
-    const current = currentSnap.val();
     
-    if (current && current.status === 'WAITING') {
-      await itemRef.update({ status: 'STARTING', startedAt: Date.now(), error: null, run_url: process.env.GITHUB_REPOSITORY && process.env.GITHUB_RUN_ID ? 'https://github.com/' + process.env.GITHUB_REPOSITORY + '/actions/runs/' + process.env.GITHUB_RUN_ID : null });
-      return selected;
+    snap.forEach(child => {
+        const item = child.val() || {};
+        if (item.status === 'WAITING' && item.url) {
+            if (!item.scheduledTime || now >= item.scheduledTime - (25 * 60 * 1000)) {
+                candidates.push({ id: child.key, ...item });
+            }
+        }
+    });
+    
+    for (const selected of candidates) {
+        const itemRef = db.ref(`live_queue/${selected.id}`);
+        // Atomic transaction to claim item
+        const txResult = await itemRef.child('status').transaction((currentStatus) => {
+            if (currentStatus === 'WAITING') {
+                return 'STARTING';
+            }
+            return; // abort if already claimed by another runner
+        });
+        
+        if (txResult.committed) {
+            await itemRef.update({
+                startedAt: Date.now(),
+                error: null,
+                run_url: process.env.GITHUB_REPOSITORY && process.env.GITHUB_RUN_ID ? 'https://github.com/' + process.env.GITHUB_REPOSITORY + '/actions/runs/' + process.env.GITHUB_RUN_ID : null
+            });
+            console.log(`✅ Claimed live class [${selected.id}] (${selected.title}) for recording.`);
+            return selected;
+        }
     }
-  
     return null;
 }
 

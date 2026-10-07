@@ -358,6 +358,25 @@ const liveAccountSelect = document.getElementById('live-account');
 const liveQueueList = document.getElementById('live-queue-list');
 const liveTriggerBtn = document.getElementById('live-trigger-gh-btn');
 
+async function triggerLiveBotDispatch(token, count = 1) {
+    let successCount = 0;
+    for (let i = 0; i < count; i++) {
+        try {
+            const res = await fetch('https://api.github.com/repos/onessingh/teams-bot/dispatches', {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/vnd.github.v3+json',
+                    'Authorization': 'token ' + token
+                },
+                body: JSON.stringify({ event_type: 'start-live-processing' })
+            });
+            if (res.ok) successCount++;
+        } catch(e) {}
+        if (i < count - 1) await new Promise(r => setTimeout(r, 600));
+    }
+    return successCount;
+}
+
 liveAddBtn.addEventListener('click', async () => {
     const url = liveLinkInput.value.trim();
     if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
@@ -386,6 +405,11 @@ liveAddBtn.addEventListener('click', async () => {
             accountId: liveAccountSelect.value
         });
         liveLinkInput.value = '';
+        
+        const token = localStorage.getItem('teams_gh_pat');
+        if (token) {
+            triggerLiveBotDispatch(token, 1);
+        }
         
     } catch (e) {
         alert('Error: ' + e.message);
@@ -482,7 +506,6 @@ onValue(ref(db, 'live_queue'), (snapshot) => {
 liveTriggerBtn.addEventListener('click', async () => {
     const token = localStorage.getItem('teams_gh_pat');
     if (!token) {
-        // Open the github token modal if missing
         const ghModal = document.getElementById('gh-token-modal');
         const clearGhBtn = document.getElementById('clear-gh-btn');
         if(ghModal) ghModal.classList.add('active');
@@ -491,32 +514,25 @@ liveTriggerBtn.addEventListener('click', async () => {
     }
 
     const originalText = liveTriggerBtn.innerHTML;
-    liveTriggerBtn.innerHTML = 'Starting Server...';
+    const waitingCount = Math.max(1, (liveQueueItemsData || []).filter(i => i && i.status === 'WAITING').length);
+    liveTriggerBtn.innerHTML = `Starting ${waitingCount} Runner(s)...`;
     liveTriggerBtn.disabled = true;
     
     try {
-        const response = await fetch('https://api.github.com/repos/onessingh/teams-bot/dispatches', {
-            method: 'POST',
-            headers: {
-                'Accept': 'application/vnd.github.v3+json',
-                'Authorization': 'token ' + token
-            },
-            body: JSON.stringify({
-                event_type: 'start-live-processing'
-            })
-        });
-        
-        if (response.ok) {
-            liveTriggerBtn.innerHTML = 'Started! Join in 2 mins'; setTimeout(() => { liveTriggerBtn.innerHTML = originalText; liveTriggerBtn.disabled = false; }, 5000);
+        const launched = await triggerLiveBotDispatch(token, waitingCount);
+        if (launched > 0) {
+            liveTriggerBtn.innerHTML = `Started ${launched} Bot(s)!`;
+            setTimeout(() => { liveTriggerBtn.innerHTML = originalText; liveTriggerBtn.disabled = false; }, 5000);
         } else {
             alert('Failed to start Live Bot Server.');
+            liveTriggerBtn.innerHTML = originalText;
+            liveTriggerBtn.disabled = false;
         }
     } catch (e) {
         alert('Error starting Live Server: ' + e.message);
+        liveTriggerBtn.innerHTML = originalText;
+        liveTriggerBtn.disabled = false;
     }
-    
-    liveTriggerBtn.innerHTML = originalText;
-    liveTriggerBtn.disabled = false;
 });
 
 // Also update live elapsed time
