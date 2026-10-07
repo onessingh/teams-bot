@@ -347,90 +347,88 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         }
     } catch(e) { console.log('[DEBUG] Mic verify error:', e.message); }
 
-    // ROOT CAUSE CONFIRMED: Teams shows App Store as main page, meeting collapsed into compact call bar at top.
-    // FIX: Re-navigate to the meeting URL to force full meeting view.
+    // ROOT CAUSE FIXED: Teams Web renders the active meeting inside a floating call widget on top-left of main pane (~x:350, y:120).
+    // Clicking the floating card header or active call indicator expands it to full screen.
     try {
-        console.log('[DEBUG] Attempting to expand meeting to full view...');
+        console.log('[DEBUG] Attempting to expand floating call widget to full view...');
 
-        // Take initial screenshot
+        // Screenshot pre-expand
         try {
             const screenshotB64 = await page.screenshot({ encoding: 'base64' });
             if (options.onFrame) await options.onFrame(screenshotB64);
             console.log('[DEBUG] Pre-expand screenshot pushed.');
-        } catch(se) { console.log('[DEBUG] Screenshot push failed:', se.message); }
+        } catch(se) {}
 
-        // Check if already in full meeting view (video elements visible)
-        let videoCount = await page.evaluate(() =>
-            Array.from(document.querySelectorAll('video')).filter(v => v.getBoundingClientRect().width > 200).length
-        );
-        console.log('[DEBUG] Video elements > 200px wide:', videoCount);
+        // Check if already in full meeting view (video or full stage)
+        let isFullView = await page.evaluate(() => {
+            const v = document.querySelector('video');
+            if (v && v.getBoundingClientRect().width > 500) return true;
+            const stage = document.querySelector('[data-tid="calling-roster-stage"], [data-tid="video-gallery"]');
+            return stage && stage.getBoundingClientRect().width > 500;
+        });
+        console.log('[DEBUG] Initial full view status:', isFullView);
 
-        if (videoCount === 0) {
-            // Strategy 1: Click compact call bar area at top (Teams call timer ~y=18)
-            console.log('[DEBUG] Strategy1: clicking compact call bar across top...');
-            for (const x of [320, 400, 500, 600, 640, 700, 750]) {
-                await page.mouse.click(x, 18);
-                await page.waitForTimeout(300);
-            }
+        if (!isFullView) {
+            // Strategy 1: Physical mouse clicks on floating call widget (top-left of main area: x:350-450, y:100-160)
+            console.log('[DEBUG] Strategy1: Clicking floating call widget header (350, 110)...');
+            await page.mouse.click(350, 110);
+            await page.waitForTimeout(1500);
+
+            console.log('[DEBUG] Strategy1b: Double-clicking floating call card (380, 130)...');
+            await page.mouse.dblclick(380, 130);
             await page.waitForTimeout(2000);
 
-            videoCount = await page.evaluate(() =>
-                Array.from(document.querySelectorAll('video')).filter(v => v.getBoundingClientRect().width > 200).length
-            );
-            console.log('[DEBUG] After top-bar clicks - video count:', videoCount);
-        }
-
-        if (videoCount === 0) {
-            // Strategy 2: Re-navigate to the meeting URL — forces Teams to load full meeting view
-            console.log('[DEBUG] Strategy2: Re-navigating to meeting URL for full meeting view...');
-            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-            await page.waitForTimeout(6000);
-
-            // Might show pre-join screen — click Join now again
-            const hasJoinBtn = await page.evaluate(() =>
-                Array.from(document.querySelectorAll('button')).some(b => (b.textContent || '').trim().toLowerCase() === 'join now')
-            );
-            if (hasJoinBtn) {
-                console.log('[DEBUG] Re-navigation showed pre-join — clicking Join now again...');
-                await page.evaluate(() => {
-                    const btn = Array.from(document.querySelectorAll('button')).find(b => (b.textContent || '').trim().toLowerCase() === 'join now');
-                    if (btn) btn.click();
-                });
-                await page.waitForTimeout(5000);
-            }
-
-            videoCount = await page.evaluate(() =>
-                Array.from(document.querySelectorAll('video')).filter(v => v.getBoundingClientRect().width > 200).length
-            );
-            console.log('[DEBUG] After re-navigation - video count:', videoCount);
-        }
-
-        if (videoCount === 0) {
-            // Strategy 3: Look for "go to call" / "return to call" text anywhere in DOM
-            console.log('[DEBUG] Strategy3: searching for return-to-call links...');
+            // Strategy 2: Click DOM elements matching floating card / call widget / active call banner
             await page.evaluate(() => {
-                const all = Array.from(document.querySelectorAll('button, a, [role="button"], span'));
-                for (const el of all) {
-                    const t = (el.textContent || el.getAttribute('aria-label') || '').toLowerCase();
-                    if (t.includes('go to call') || t.includes('return to call') || t.includes('back to call') || t.includes('join call')) {
-                        el.click();
+                const candidates = Array.from(document.querySelectorAll('*')).filter(el => {
+                    const r = el.getBoundingClientRect();
+                    const text = (el.textContent || '').toLowerCase();
+                    const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+                    const tid = (el.getAttribute('data-tid') || '').toLowerCase();
+                    // Detect floating widget or expand button
+                    const isCallWidget = tid.includes('pip') || tid.includes('call') || aria.includes('expand') || aria.includes('full') || text.includes('return to call') || text.includes('back to call');
+                    const isInTopLeftWidget = r.x > 250 && r.x < 550 && r.y > 60 && r.y < 300 && r.width > 100 && r.width < 500;
+                    return isCallWidget || isInTopLeftWidget;
+                });
+                console.log('[DEBUG-DOM] Found call widget candidates count:', candidates.length);
+                if (candidates.length > 0) {
+                    // Click top/first candidate
+                    candidates[0].click();
+                }
+            });
+            await page.waitForTimeout(2000);
+
+            // Strategy 3: Click "Calls" tab on Teams left app bar (x: 34, y: 320) to focus call
+            console.log('[DEBUG] Strategy3: Clicking Calls tab on left app bar (34, 320)...');
+            await page.mouse.click(34, 320);
+            await page.waitForTimeout(2000);
+
+            // Strategy 4: Click any "Return to call" / "Rejoin" button that appeared
+            await page.evaluate(() => {
+                const btns = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+                for (const b of btns) {
+                    const t = (b.textContent || b.getAttribute('aria-label') || '').toLowerCase();
+                    if (t.includes('return') || t.includes('back to call') || t.includes('open call') || t.includes('maximize')) {
+                        b.click();
                     }
                 }
             });
-            await page.waitForTimeout(3000);
+            await page.waitForTimeout(2000);
+
+            // Final check
+            isFullView = await page.evaluate(() => {
+                const v = document.querySelector('video');
+                return (v && v.getBoundingClientRect().width > 500) || !!document.querySelector('[data-tid="calling-roster-stage"]');
+            });
+            console.log('[DEBUG] Post-expand full view status:', isFullView ? '✅ FULL VIEW ACTIVE!' : '⚠️ COMPACT WIDGET STILL ACTIVE');
         }
 
-        // Final screenshot to confirm state
+        // Post-expand screenshot
         try {
             const screenshotB64_2 = await page.screenshot({ encoding: 'base64' });
             if (options.onFrame) await options.onFrame(screenshotB64_2);
             console.log('[DEBUG] Post-expand screenshot pushed.');
-        } catch(se) { console.log('[DEBUG] Post-expand screenshot push failed:', se.message); }
-
-        const finalVideoCount = await page.evaluate(() =>
-            Array.from(document.querySelectorAll('video')).filter(v => v.getBoundingClientRect().width > 200).length
-        );
-        console.log('[DEBUG] Final video count:', finalVideoCount, finalVideoCount > 0 ? '✅ EXPANDED!' : '❌ Still not expanded');
+        } catch(se) {}
 
         // Close any overlay
         const bodyText = await page.evaluate(() => document.body.innerText || '');
@@ -667,13 +665,13 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             const text = document.body.textContent || "";
             let ended = false;
             let currentCount = 0;
-              if (text.includes("The meeting has ended") || text.includes("was ended") || text.includes("You've left the meeting") || text.includes("removed you") || text.includes("You were removed") || text.includes("left the meeting") || text.includes("You're disconnected") || text.includes("Reconnecting...") || text.includes("Hang on, we're reconnecting") || (text.includes("Join now") && text.includes("audio"))) {
+              if (text.includes("The meeting has ended") || text.includes("was ended by organizer") || text.includes("You've left the meeting") || text.includes("removed you from the meeting") || text.includes("You were removed from the meeting") || text.includes("You're disconnected")) {
                   ended = true;
               }
-            
-            // Check if bot is completely alone
-            if (text.includes("In this meeting (1)") || text.includes("Attendees (1)") || text.includes("Participants (1)") || text.includes("Waiting for others to join")) {
-                ended = true;
+
+            // Check if bot is completely alone (only if explicit count of 1 is present, NOT 'Waiting for others to join')
+            if (text.includes("In this meeting (1)") || text.includes("Attendees (1)") || text.includes("Participants (1)")) {
+                // Do not mark ended immediately when alone; record normally unless meeting explicitly ended
                 currentCount = 1;
             }
             
