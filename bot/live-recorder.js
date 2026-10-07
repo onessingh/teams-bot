@@ -347,126 +347,101 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         }
     } catch(e) { console.log('[DEBUG] Mic verify error:', e.message); }
 
-    // Expand the meeting from PiP mini-window to full view
+    // ROOT CAUSE CONFIRMED: Teams shows App Store as main page, meeting collapsed into compact call bar at top.
+    // FIX: Re-navigate to the meeting URL to force full meeting view.
     try {
-        console.log('[DEBUG] Expanding meeting from PiP / full view...');
+        console.log('[DEBUG] Attempting to expand meeting to full view...');
 
-        // === SCREENSHOT DEBUG: Push current screen state to Firebase ===
+        // Take initial screenshot
         try {
             const screenshotB64 = await page.screenshot({ encoding: 'base64' });
             if (options.onFrame) await options.onFrame(screenshotB64);
-            console.log('[DEBUG] Screenshot pushed to dashboard for PiP debug.');
+            console.log('[DEBUG] Pre-expand screenshot pushed.');
         } catch(se) { console.log('[DEBUG] Screenshot push failed:', se.message); }
 
-        // === BUTTON DUMP: Log ALL buttons so we know what's available ===
-        const allBtns = await page.evaluate(() => {
-            return Array.from(document.querySelectorAll('button, [role="button"], a[role="link"]'))
-                .map(b => ({
-                    label: b.getAttribute('aria-label') || '',
-                    title: b.title || '',
-                    text: (b.textContent || '').trim().slice(0, 40),
-                    dataTid: b.getAttribute('data-tid') || '',
-                    rect: (() => { const r = b.getBoundingClientRect(); return `${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.width)}x${Math.round(r.height)}`; })()
-                }))
-                .filter(b => b.label || b.title || b.text);
-        });
-        console.log('[DEBUG-DUMP] All buttons in meeting:', JSON.stringify(allBtns));
+        // Check if already in full meeting view (video elements visible)
+        let videoCount = await page.evaluate(() =>
+            Array.from(document.querySelectorAll('video')).filter(v => v.getBoundingClientRect().width > 200).length
+        );
+        console.log('[DEBUG] Video elements > 200px wide:', videoCount);
 
-        // === VIDEO ELEMENT DUMP ===
-        const videoInfo = await page.evaluate(() => {
-            return Array.from(document.querySelectorAll('video')).map(v => {
-                const r = v.getBoundingClientRect();
-                return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
-            });
-        });
-        console.log('[DEBUG-DUMP] Video elements:', JSON.stringify(videoInfo));
-
-        // Check if meeting is already expanded (video stage width > 800)
-        let isExpanded = videoInfo.some(v => v.w > 800);
-        console.log('[DEBUG] Is meeting already expanded (video w>800)?', isExpanded);
-
-        if (!isExpanded) {
-            console.log('[DEBUG] Meeting is in PiP mode. Attempting multi-strategy expand...');
-
-            // Strategy 1: DOM button click — "open call in full", "pop out", "return to meeting", "maximize"
-            const expandClicked = await page.evaluate(() => {
-                const keywords = ['open call in full', 'pop out', 'return to meeting', 'maximize', 'open in full', 'go to call', 'back to call', 'rejoin call'];
-                const btns = Array.from(document.querySelectorAll('button, [role="button"]'));
-                let clicked = false;
-                for (const btn of btns) {
-                    const label = (btn.getAttribute('aria-label') || btn.getAttribute('title') || btn.textContent || '').toLowerCase();
-                    if (keywords.some(k => label.includes(k))) {
-                        console.log('[DEBUG] Strategy1: clicking expand btn:', label);
-                        btn.click();
-                        clicked = true;
-                    }
-                }
-                return clicked;
-            });
+        if (videoCount === 0) {
+            // Strategy 1: Click compact call bar area at top (Teams call timer ~y=18)
+            console.log('[DEBUG] Strategy1: clicking compact call bar across top...');
+            for (const x of [320, 400, 500, 600, 640, 700, 750]) {
+                await page.mouse.click(x, 18);
+                await page.waitForTimeout(300);
+            }
             await page.waitForTimeout(2000);
 
-            // Strategy 2: Click the PiP video element itself (double-click to expand)
-            if (!expandClicked && videoInfo.length > 0) {
-                const pip = videoInfo[0];
-                const cx = Math.round(pip.x + pip.w / 2);
-                const cy = Math.round(pip.y + pip.h / 2);
-                console.log(`[DEBUG] Strategy2: double-clicking PiP video at (${cx}, ${cy})...`);
-                await page.mouse.dblclick(cx, cy);
-                await page.waitForTimeout(2000);
-            }
-
-            // Strategy 3: Keyboard shortcut Ctrl+Shift+F (Teams focus mode)
-            console.log('[DEBUG] Strategy3: pressing Ctrl+Shift+F...');
-            await page.keyboard.press('Control+Shift+F');
-            await page.waitForTimeout(2000);
-
-            // Strategy 4: Try clicking any PiP header region (top of window, y=30-100)
-            // Find a small div/container that looks like the PiP mini-window
-            const pipInfo = await page.evaluate(() => {
-                const candidates = Array.from(document.querySelectorAll('div[style*="position: fixed"], div[style*="position:fixed"]'));
-                return candidates.map(el => {
-                    const r = el.getBoundingClientRect();
-                    return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), tag: el.tagName };
-                }).filter(c => c.w > 100 && c.w < 700 && c.h > 50 && c.h < 500);
-            });
-            console.log('[DEBUG-DUMP] PiP candidate containers:', JSON.stringify(pipInfo));
-
-            if (pipInfo.length > 0) {
-                const pip2 = pipInfo[0];
-                // Click on the top-right corner of PiP (where maximize/popout icon usually is)
-                const bx = Math.round(pip2.x + pip2.w - 30);
-                const by = Math.round(pip2.y + 15);
-                console.log(`[DEBUG] Strategy4: clicking PiP top-right corner at (${bx}, ${by})...`);
-                await page.mouse.click(bx, by);
-                await page.waitForTimeout(2000);
-                // Also try second-to-last icon
-                await page.mouse.click(bx - 30, by);
-                await page.waitForTimeout(2000);
-            }
-
-            // Final check
-            isExpanded = await page.evaluate(() => {
-                return Array.from(document.querySelectorAll('video')).some(v => v.getBoundingClientRect().width > 800);
-            });
-            console.log('[DEBUG] Meeting expansion status after all strategies:', isExpanded);
-
-            // Take another screenshot after expansion attempts
-            try {
-                const screenshotB64_2 = await page.screenshot({ encoding: 'base64' });
-                if (options.onFrame) await options.onFrame(screenshotB64_2);
-                console.log('[DEBUG] Post-expand screenshot pushed to dashboard.');
-            } catch(se) { console.log('[DEBUG] Post-expand screenshot push failed:', se.message); }
+            videoCount = await page.evaluate(() =>
+                Array.from(document.querySelectorAll('video')).filter(v => v.getBoundingClientRect().width > 200).length
+            );
+            console.log('[DEBUG] After top-bar clicks - video count:', videoCount);
         }
 
-        // Close All contacts if opened
-        await page.waitForTimeout(1000);
+        if (videoCount === 0) {
+            // Strategy 2: Re-navigate to the meeting URL — forces Teams to load full meeting view
+            console.log('[DEBUG] Strategy2: Re-navigating to meeting URL for full meeting view...');
+            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            await page.waitForTimeout(6000);
+
+            // Might show pre-join screen — click Join now again
+            const hasJoinBtn = await page.evaluate(() =>
+                Array.from(document.querySelectorAll('button')).some(b => (b.textContent || '').trim().toLowerCase() === 'join now')
+            );
+            if (hasJoinBtn) {
+                console.log('[DEBUG] Re-navigation showed pre-join — clicking Join now again...');
+                await page.evaluate(() => {
+                    const btn = Array.from(document.querySelectorAll('button')).find(b => (b.textContent || '').trim().toLowerCase() === 'join now');
+                    if (btn) btn.click();
+                });
+                await page.waitForTimeout(5000);
+            }
+
+            videoCount = await page.evaluate(() =>
+                Array.from(document.querySelectorAll('video')).filter(v => v.getBoundingClientRect().width > 200).length
+            );
+            console.log('[DEBUG] After re-navigation - video count:', videoCount);
+        }
+
+        if (videoCount === 0) {
+            // Strategy 3: Look for "go to call" / "return to call" text anywhere in DOM
+            console.log('[DEBUG] Strategy3: searching for return-to-call links...');
+            await page.evaluate(() => {
+                const all = Array.from(document.querySelectorAll('button, a, [role="button"], span'));
+                for (const el of all) {
+                    const t = (el.textContent || el.getAttribute('aria-label') || '').toLowerCase();
+                    if (t.includes('go to call') || t.includes('return to call') || t.includes('back to call') || t.includes('join call')) {
+                        el.click();
+                    }
+                }
+            });
+            await page.waitForTimeout(3000);
+        }
+
+        // Final screenshot to confirm state
+        try {
+            const screenshotB64_2 = await page.screenshot({ encoding: 'base64' });
+            if (options.onFrame) await options.onFrame(screenshotB64_2);
+            console.log('[DEBUG] Post-expand screenshot pushed.');
+        } catch(se) { console.log('[DEBUG] Post-expand screenshot push failed:', se.message); }
+
+        const finalVideoCount = await page.evaluate(() =>
+            Array.from(document.querySelectorAll('video')).filter(v => v.getBoundingClientRect().width > 200).length
+        );
+        console.log('[DEBUG] Final video count:', finalVideoCount, finalVideoCount > 0 ? '✅ EXPANDED!' : '❌ Still not expanded');
+
+        // Close any overlay
         const bodyText = await page.evaluate(() => document.body.innerText || '');
         if (bodyText.toLowerCase().includes('all contacts')) {
-            console.log('[DEBUG] All Contacts still showing - pressing Escape...');
             await page.keyboard.press('Escape');
             await page.waitForTimeout(1500);
         }
-    } catch(e) { console.log('[DEBUG] PiP expand error:', e.message); }
+    } catch(e) { console.log('[DEBUG] Meeting expand error:', e.message); }
+
+
+
 
     // Try to activate "Hide me" and "Full screen" using aggressive locators
     try {
