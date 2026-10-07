@@ -114,6 +114,8 @@ async function performInlineLogin(page, creds) {
     console.log('[DEBUG] Inline login error:', e.message);
     return false;
   }
+}
+
 // ---------- HELPERS ----------
 async function isMeetingFullView(page) {
   return page.evaluate(() => {
