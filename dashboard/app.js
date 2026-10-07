@@ -106,7 +106,7 @@ onValue(ref(db, 'queue'), (snapshot) => {
             linkHtml += `<a href="${item.youtube_url}" target="_blank" class="mt-2 inline-flex items-center text-xs font-bold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-md transition-colors">▶️ Watch on YouTube</a>`;
         }
         
-        let statusText = item.status;
+        let statusText = item.status || 'WAITING';
         if (item.error) {
             linkHtml += `<div class="mt-2 text-[10px] text-red-500 font-medium bg-red-50 p-2 rounded border border-red-100">${item.error}</div>`;
         }
@@ -414,7 +414,7 @@ onValue(ref(db, 'live_queue'), (snapshot) => {
             linkHtml += `<a href="${item.youtube_url}" target="_blank" class="mt-2 inline-flex items-center text-xs font-bold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-md transition-colors"> Watch on YouTube</a>`;
         }
         
-        let statusText = item.status;
+        let statusText = item.status || 'WAITING';
         if (item.error) {
             linkHtml += `<div class="mt-2 text-[10px] text-red-500 font-medium bg-red-50 p-2 rounded border border-red-100">${item.error}</div>`;
         }
@@ -423,7 +423,7 @@ onValue(ref(db, 'live_queue'), (snapshot) => {
         }
         
         let statusColor = "bg-gray-100 text-gray-600";
-          let friendlyStatus = statusText.replace(/_/g, ' ');
+        let friendlyStatus = String(statusText).replace(/_/g, ' ');
           if (item.status === 'WAITING') statusColor = "bg-yellow-100 text-yellow-700";
           if (item.status === 'STARTING_BROWSER' || item.status === 'OPENING_RECORDING') statusColor = "bg-purple-100 text-purple-700";
           if (item.status === 'WAITING_FOR_SCHEDULED_TIME') { statusColor = "bg-blue-100 text-blue-700 animate-pulse"; friendlyStatus = "JOINED EARLY - WAITING"; }
