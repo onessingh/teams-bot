@@ -359,7 +359,9 @@ const liveTriggerBtn = document.getElementById('live-trigger-gh-btn');
 
 liveAddBtn.addEventListener('click', async () => {
     const url = liveLinkInput.value.trim();
-    if (!url) return alert('Please paste a valid Teams Live Meeting link!');
+    if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+        return alert('Please paste a valid Teams Live Meeting link starting with https://!');
+    }
     
     const timeStr = document.getElementById('live-schedule-time')?.value;
     let scheduledTime = 0;

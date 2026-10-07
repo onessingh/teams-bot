@@ -89,6 +89,13 @@ async function getCookies(accountId) {
 
 async function processItem(item) {
   const ref = db.ref(`live_queue/${item.id}`);
+
+  if (!item.url || typeof item.url !== 'string' || !item.url.startsWith('http')) {
+    const errStr = `Invalid meeting URL: "${String(item.url).slice(0, 50)}..."`;
+    console.error(`? Live Class: ${item.title || item.id} failed:`, errStr);
+    await ref.update({ status: 'FAILED', error: errStr, updatedAt: Date.now() });
+    return;
+  }
   const safeName = String(item.title || `live-${item.id}`)
     .replace(/[^a-z0-9._-]+/gi, '_')
     .slice(0, 80);
