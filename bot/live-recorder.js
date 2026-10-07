@@ -684,6 +684,15 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         await page.waitForTimeout(waitMs);
     }
 
+    // ROSTER DEBUG DUMP FOR TEACHER SCORING & CLASS END DETECTION
+    try {
+      const html = await page.evaluate(() => {
+        const r = document.querySelector('[data-tid="calling-roster-stage"], [data-tid="roster"], [id*="roster"]');
+        return r ? r.outerHTML.slice(0, 6000) : 'roster not found';
+      });
+      console.log('[DEBUG-DUMP] ROSTER:', html);
+    } catch(re) {}
+
     // Start FFmpeg
     if (options.onStatus) await options.onStatus('RECORDING');
     console.log('🎥 Starting FFmpeg recording for live class...');
