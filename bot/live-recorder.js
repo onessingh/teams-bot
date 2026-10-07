@@ -347,124 +347,186 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         }
     } catch(e) { console.log('[DEBUG] Mic verify error:', e.message); }
 
-    // ROOT CAUSE FIXED: Teams Web renders the active meeting inside a floating call widget on top-left of main pane (~x:350, y:120).
-    // Clicking the floating card header or active call indicator expands it to full screen.
+    // EXPAND STRATEGY: Use Teams data-tid selectors for the PiP/calling widget, then keyboard shortcuts.
+    // NO random hardcoded coordinates — they hit wrong UI elements (Teams Store, sidebar icons).
     try {
         console.log('[DEBUG] Attempting to expand floating call widget to full view...');
 
-        // Screenshot pre-expand
+        // Pre-expand screenshot
         try {
             const screenshotB64 = await page.screenshot({ encoding: 'base64' });
             if (options.onFrame) await options.onFrame(screenshotB64);
             console.log('[DEBUG] Pre-expand screenshot pushed.');
         } catch(se) {}
 
-        // Check if already in full meeting view (video or full stage)
+        // Check if already in full meeting view
         let isFullView = await page.evaluate(() => {
             const v = document.querySelector('video');
             if (v && v.getBoundingClientRect().width > 500) return true;
             const stage = document.querySelector('[data-tid="calling-roster-stage"], [data-tid="video-gallery"]');
-            return stage && stage.getBoundingClientRect().width > 500;
+            return !!(stage && stage.getBoundingClientRect().width > 500);
         });
         console.log('[DEBUG] Initial full view status:', isFullView);
 
         if (!isFullView) {
-            console.log('[DEBUG] Meeting is in compact floating card mode. Dynamically scanning entire viewport for card bounds...');
-
-            // Step 1: Detect floating card container bounds dynamically across the entire viewport
-            const cardInfo = await page.evaluate(() => {
-                const results = [];
-                const all = Array.from(document.querySelectorAll('div, section, main, [role="region"], [role="dialog"]'));
-                for (const el of all) {
-                    const r = el.getBoundingClientRect();
-                    const style = window.getComputedStyle(el);
-                    const isFloating = style.position === 'fixed' || style.position === 'absolute' || parseInt(style.zIndex, 10) > 20;
-                    // Floating card dimensions: width 150-600px, height 100-500px
-                    if (isFloating && r.width >= 150 && r.width <= 600 && r.height >= 100 && r.height <= 500 && r.x >= 0 && r.y >= 0) {
-                        results.push({
-                            x: Math.round(r.x),
-                            y: Math.round(r.y),
-                            w: Math.round(r.width),
-                            h: Math.round(r.height),
-                            tag: el.tagName,
-                            text: el.textContent?.trim().slice(0, 30)
-                        });
+            // --- Strategy 1: Click the Teams calling widget / PiP container via data-tid ---
+            console.log('[DEBUG] Strategy 1: Clicking Teams calling widget via data-tid selectors...');
+            const widgetClicked = await page.evaluate(() => {
+                // Known Teams calling widget data-tid identifiers
+                const selectors = [
+                    '[data-tid="cw-pip-container"]',
+                    '[data-tid="calling-widget"]',
+                    '[data-tid="calling-widget-container"]',
+                    '[data-tid="active-call-widget"]',
+                    '[data-tid="cw-header"]',
+                    '[data-tid="calling-status-bar"]',
+                    '[data-tid="app-calling-widget"]',
+                    '[data-tid="returnToCallButton"]',
+                    '[data-tid="calling-return-to-call"]',
+                ];
+                for (const sel of selectors) {
+                    const el = document.querySelector(sel);
+                    if (el) {
+                        console.log('[DEBUG] Found Teams widget element:', sel);
+                        el.click();
+                        return sel;
                     }
                 }
-                return results;
-            });
-            console.log('[DEBUG-CARD-INFO] Detected floating cards:', JSON.stringify(cardInfo));
-
-            // Step 2: Extract expand buttons anywhere in DOM (matching expand / popout / full / maximize)
-            const expandBtnCoords = await page.evaluate(() => {
-                const btns = Array.from(document.querySelectorAll('button, [role="button"], a, svg'));
-                const list = [];
-                for (const b of btns) {
-                    const r = b.getBoundingClientRect();
-                    const label = (b.getAttribute('aria-label') || b.getAttribute('title') || b.getAttribute('data-tid') || b.textContent || '').toLowerCase();
-                    if (r.width > 5 && r.height > 5 && (label.includes('expand') || label.includes('full') || label.includes('popout') || label.includes('maximize') || label.includes('return') || label.includes('pip'))) {
-                        list.push({
-                            cx: Math.round(r.x + r.width / 2),
-                            cy: Math.round(r.y + r.height / 2),
-                            label: label.slice(0, 30)
-                        });
-                    }
+                // Fallback: look for any element whose class/id contains 'pip' or 'calling-widget'
+                const byClass = document.querySelector('[class*="pip-"], [class*="callingWidget"], [class*="calling-widget"], [id*="calling-widget"]');
+                if (byClass) {
+                    byClass.click();
+                    return 'class-match:' + (byClass.className || byClass.id || '').slice(0, 40);
                 }
-                return list;
+                return null;
             });
-            console.log('[DEBUG-EXPAND-BTNS] Found expand button elements:', JSON.stringify(expandBtnCoords));
+            console.log('[DEBUG] Widget click result:', widgetClicked);
+            await page.waitForTimeout(2000);
 
-            // Step 3: Physically click detected expand buttons
-            for (const item of expandBtnCoords) {
-                console.log(`[DEBUG] Physical mouse click on expand button "${item.label}" at (${item.cx}, ${item.cy})...`);
-                await page.mouse.click(item.cx, item.cy);
-                await page.waitForTimeout(1000);
-            }
-
-            // Step 4: Physically click top-right corner of all detected floating cards
-            for (const card of cardInfo) {
-                const topRightX = card.x + card.w - 15;
-                const topRightY = card.y + 15;
-                const headerCenterX = card.x + Math.round(card.w / 2);
-                const headerCenterY = card.y + 15;
-
-                console.log(`[DEBUG] Physical mouse click on card top-right expand icon (${topRightX}, ${topRightY})...`);
-                await page.mouse.click(topRightX, topRightY);
-                await page.waitForTimeout(1000);
-
-                console.log(`[DEBUG] Physical mouse click on card header center (${headerCenterX}, ${headerCenterY})...`);
-                await page.mouse.click(headerCenterX, headerCenterY);
-                await page.waitForTimeout(800);
-
-                console.log(`[DEBUG] Double-clicking card header (${headerCenterX}, ${headerCenterY})...`);
-                await page.mouse.dblclick(headerCenterX, headerCenterY);
-                await page.waitForTimeout(1000);
-            }
-
-            // Step 5: Fallback hardcoded physical clicks at exact coordinates from user screenshot (media_1791363100726.png)
-            // Screenshot shows card at x: 234-384, y: 368-615 -> Expand icon ↖↗ at (373, 388), Header at (310, 388)
-            const fallbackPoints = [
-                { x: 373, y: 388, desc: 'Exact Expand Icon ↖↗ from Screenshot' },
-                { x: 365, y: 388, desc: 'Top-Right Icon Area' },
-                { x: 310, y: 388, desc: 'Card Header Bar' },
-                { x: 380, y: 95, desc: 'Top position Expand Icon' }
-            ];
-            for (const pt of fallbackPoints) {
-                console.log(`[DEBUG] Fallback click on ${pt.desc} (${pt.x}, ${pt.y})...`);
-                await page.mouse.click(pt.x, pt.y);
-                await page.waitForTimeout(800);
-            }
-
-            // Step 6: Click "Calls" tab on left app bar (34, 320)
-            console.log('[DEBUG] Clicking Calls tab on left app bar (34, 320)...');
-            await page.mouse.click(34, 320);
-            await page.waitForTimeout(1500);
-
-            // Check expansion status
+            // Check after strategy 1
             isFullView = await page.evaluate(() => {
                 const v = document.querySelector('video');
-                return (v && v.getBoundingClientRect().width > 500) || !!document.querySelector('[data-tid="calling-roster-stage"]');
+                if (v && v.getBoundingClientRect().width > 500) return true;
+                return !!document.querySelector('[data-tid="calling-roster-stage"], [data-tid="video-gallery"]');
             });
+            console.log('[DEBUG] After Strategy 1 - full view:', isFullView);
+
+            if (!isFullView) {
+                // --- Strategy 2: Keyboard shortcut Ctrl+Shift+F (Teams full view / focus mode) ---
+                console.log('[DEBUG] Strategy 2: Pressing Ctrl+Shift+F for Teams full view...');
+                await page.keyboard.press('Control+Shift+F');
+                await page.waitForTimeout(2000);
+
+                isFullView = await page.evaluate(() => {
+                    const v = document.querySelector('video');
+                    if (v && v.getBoundingClientRect().width > 500) return true;
+                    return !!document.querySelector('[data-tid="calling-roster-stage"], [data-tid="video-gallery"]');
+                });
+                console.log('[DEBUG] After Strategy 2 (Ctrl+Shift+F) - full view:', isFullView);
+            }
+
+            if (!isFullView) {
+                // --- Strategy 3: Dump all visible fixed/absolute elements with text to find the card ---
+                console.log('[DEBUG] Strategy 3: Scanning DOM for calling widget by position and text...');
+                const cardInfo = await page.evaluate(() => {
+                    const results = [];
+                    const all = Array.from(document.querySelectorAll('*'));
+                    for (const el of all) {
+                        const r = el.getBoundingClientRect();
+                        const style = window.getComputedStyle(el);
+                        const pos = style.position;
+                        const zi = parseInt(style.zIndex, 10) || 0;
+                        // Only fixed/absolute elements at high z-index that look like a widget (not full-page)
+                        if ((pos === 'fixed' || pos === 'absolute') && zi >= 10
+                            && r.width >= 100 && r.width <= 500
+                            && r.height >= 60 && r.height <= 400
+                            && r.x >= 0 && r.y >= 0 && r.right <= window.innerWidth && r.bottom <= window.innerHeight) {
+                            const text = (el.textContent || '').trim().slice(0, 60);
+                            const tid = el.getAttribute('data-tid') || '';
+                            // Skip elements that are clearly not the call card (e.g. tiny icons, tooltips)
+                            if (r.width > 100 && r.height > 60) {
+                                results.push({ x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), tid, text });
+                            }
+                        }
+                    }
+                    // Deduplicate by position
+                    const seen = new Set();
+                    return results.filter(c => {
+                        const key = `${c.x},${c.y},${c.w},${c.h}`;
+                        if (seen.has(key)) return false;
+                        seen.add(key); return true;
+                    }).slice(0, 10);
+                });
+                console.log('[DEBUG-CARD-SCAN] Floating elements found:', JSON.stringify(cardInfo));
+
+                // Click ONLY the top-right corner of cards with w >= 120 (avoid tiny avatar circles)
+                for (const card of cardInfo) {
+                    if (card.w < 120 || card.h < 70) {
+                        console.log(`[DEBUG] Skipping small element (${card.w}x${card.h}) at (${card.x},${card.y}) - likely avatar/icon`);
+                        continue;
+                    }
+                    const expandX = card.x + card.w - 12;
+                    const expandY = card.y + 12;
+                    console.log(`[DEBUG] Clicking top-right of card [${card.tid || card.text.slice(0,20)}] at (${expandX}, ${expandY}) card-size=${card.w}x${card.h}`);
+                    await page.mouse.click(expandX, expandY);
+                    await page.waitForTimeout(1200);
+                    // Also try center of header bar
+                    const headerX = Math.round(card.x + card.w / 2);
+                    const headerY = card.y + 12;
+                    await page.mouse.click(headerX, headerY);
+                    await page.waitForTimeout(1000);
+                }
+
+                isFullView = await page.evaluate(() => {
+                    const v = document.querySelector('video');
+                    if (v && v.getBoundingClientRect().width > 500) return true;
+                    return !!document.querySelector('[data-tid="calling-roster-stage"], [data-tid="video-gallery"]');
+                });
+                console.log('[DEBUG] After Strategy 3 - full view:', isFullView);
+            }
+
+            if (!isFullView) {
+                // --- Strategy 4: Try "Return to call" link that Teams sometimes shows in sidebar ---
+                console.log('[DEBUG] Strategy 4: Looking for "Return to call" text link...');
+                const returnBtn = await page.evaluate(() => {
+                    const all = Array.from(document.querySelectorAll('button, a, span, div'));
+                    for (const el of all) {
+                        const t = (el.textContent || '').trim().toLowerCase();
+                        const label = (el.getAttribute('aria-label') || '').toLowerCase();
+                        if (t === 'return to call' || label === 'return to call' || t.includes('return to call')) {
+                            const r = el.getBoundingClientRect();
+                            if (r.width > 0) { el.click(); return true; }
+                        }
+                    }
+                    return false;
+                });
+                console.log('[DEBUG] Return-to-call click result:', returnBtn);
+                await page.waitForTimeout(2000);
+
+                isFullView = await page.evaluate(() => {
+                    const v = document.querySelector('video');
+                    if (v && v.getBoundingClientRect().width > 500) return true;
+                    return !!document.querySelector('[data-tid="calling-roster-stage"], [data-tid="video-gallery"]');
+                });
+                console.log('[DEBUG] After Strategy 4 - full view:', isFullView);
+            }
+
+            if (!isFullView) {
+                // --- Strategy 5: Escape any open panel then press Ctrl+Shift+F again ---
+                console.log('[DEBUG] Strategy 5: Escape + Ctrl+Shift+F retry...');
+                await page.keyboard.press('Escape');
+                await page.waitForTimeout(1000);
+                await page.keyboard.press('Control+Shift+F');
+                await page.waitForTimeout(2000);
+
+                isFullView = await page.evaluate(() => {
+                    const v = document.querySelector('video');
+                    if (v && v.getBoundingClientRect().width > 500) return true;
+                    return !!document.querySelector('[data-tid="calling-roster-stage"], [data-tid="video-gallery"]');
+                });
+                console.log('[DEBUG] After Strategy 5 - full view:', isFullView);
+            }
+
             console.log('[DEBUG] Post-expand full view status:', isFullView ? '✅ FULL VIEW ACTIVE!' : '⚠️ COMPACT WIDGET STILL ACTIVE');
         }
 
@@ -475,9 +537,10 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             console.log('[DEBUG] Post-expand screenshot pushed.');
         } catch(se) {}
 
-        // Close any overlay
+        // Close any accidentally opened overlay (e.g. contacts panel)
         const bodyText = await page.evaluate(() => document.body.innerText || '');
-        if (bodyText.toLowerCase().includes('all contacts')) {
+        if (bodyText.toLowerCase().includes('all contacts') || bodyText.toLowerCase().includes('apps')) {
+            console.log('[DEBUG] Overlay detected, pressing Escape to close...');
             await page.keyboard.press('Escape');
             await page.waitForTimeout(1500);
         }
