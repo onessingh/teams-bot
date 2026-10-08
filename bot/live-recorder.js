@@ -679,21 +679,43 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                         }
                     });
 
-                    // Hide Lobby Notifications ("Waiting in the lobby", "Deny", "Admit")
+                    // 1. DISMISS & HIDE Security / Migration Banner ("teams.cloud.microsoft. Same app, better security. Learn more")
                     document.querySelectorAll('*').forEach(el => {
                         const text = (el.textContent || '').toLowerCase();
-                        if (text.includes('waiting in the lobby')) {
+                        if (text.includes('same app, better security') || text.includes('teams.cloud.microsoft') || text.includes('better security')) {
+                            // Try clicking close/X button if present
+                            const closeBtn = el.querySelector('button, [role="button"], svg, [aria-label*="Close" i], [aria-label*="Dismiss" i]');
+                            if (closeBtn) {
+                                try { closeBtn.click(); } catch(e){}
+                            }
                             let container = el;
                             for (let i = 0; i < 6; i++) {
                                 if (container && container.tagName !== 'BODY') {
-                                    const r = container.getBoundingClientRect();
-                                    if (r.width < 600 && r.height < 350 && r.top < 450) {
-                                        container.style.setProperty('display', 'none', 'important');
-                                        container.style.setProperty('opacity', '0', 'important');
-                                        container.style.setProperty('visibility', 'hidden', 'important');
-                                        container.style.setProperty('pointer-events', 'none', 'important');
-                                        break;
-                                    }
+                                    container.style.setProperty('display', 'none', 'important');
+                                    container.style.setProperty('opacity', '0', 'important');
+                                    container.style.setProperty('visibility', 'hidden', 'important');
+                                    container.style.setProperty('height', '0px', 'important');
+                                    container.style.setProperty('margin', '0px', 'important');
+                                    container.style.setProperty('padding', '0px', 'important');
+                                    container.style.setProperty('pointer-events', 'none', 'important');
+                                    container = container.parentElement;
+                                }
+                            }
+                        }
+                    });
+
+                    // 2. UNCONDITIONAL HIDE for Lobby Notifications ("Waiting in the lobby", "Deny", "Admit")
+                    document.querySelectorAll('*').forEach(el => {
+                        const text = (el.textContent || '').toLowerCase();
+                        if (text.includes('waiting in the lobby') || (text.includes('deny') && text.includes('admit'))) {
+                            let container = el;
+                            for (let i = 0; i < 8; i++) {
+                                if (container && container.tagName !== 'BODY') {
+                                    container.style.setProperty('display', 'none', 'important');
+                                    container.style.setProperty('opacity', '0', 'important');
+                                    container.style.setProperty('visibility', 'hidden', 'important');
+                                    container.style.setProperty('pointer-events', 'none', 'important');
+                                    container.style.setProperty('z-index', '-99999', 'important');
                                     container = container.parentElement;
                                 }
                             }
@@ -732,11 +754,11 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                         }
                     }
 
-                    // Hide Top Toolbar / Controls / Timer anywhere in top 250px (y < 250)
+                    // Hide Top Toolbar / Controls / Timer anywhere in top 300px (y < 300)
                     document.querySelectorAll('*').forEach(el => {
                         if (el.tagName === 'BODY' || el.tagName === 'HTML' || el.tagName === 'STYLE' || el.tagName === 'SCRIPT') return;
                         const r = el.getBoundingClientRect();
-                        if (r.top >= -20 && r.top < 250 && r.height > 15 && r.height < 250 && r.width > window.innerWidth * 0.2) {
+                        if (r.top >= -50 && r.top < 300 && r.height > 15 && r.height < 300 && r.width > window.innerWidth * 0.2) {
                             const text = ((el.textContent || '') + ' ' + (el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('data-tid') || '')).toLowerCase();
                             if (text.includes('chat') || text.includes('people') || text.includes('view') || text.includes('leave') || text.includes('mic') || text.includes('camera') || text.includes('share') || text.includes('roster') || text.includes('react') || /\b\d{1,2}:\d{2}\b/.test(text)) {
                                 el.style.setProperty('display', 'none', 'important');
@@ -754,7 +776,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                         for (let i = 0; i < 12; i++) {
                             if (toolbar && toolbar.tagName !== 'BODY') {
                                 const r = toolbar.getBoundingClientRect();
-                                if (r.width > 150 && r.height < 200 && r.top < 280) {
+                                if (r.width > 150 && r.height < 250 && r.top < 320) {
                                     toolbar.style.setProperty('display', 'none', 'important');
                                     toolbar.style.setProperty('opacity', '0', 'important');
                                     toolbar.style.setProperty('visibility', 'hidden', 'important');
