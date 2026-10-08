@@ -574,6 +574,12 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             const style = document.createElement('style');
             style.innerHTML = `
     * { cursor: none !important; }
+    header,
+    #teams-app-header,
+    [data-tid="app-header"],
+    div[class*="app-header"],
+    div[class*="header-bar"],
+    div[class*="top-bar"],
     div[role="alert"], 
     div[role="banner"],
     div[data-tid^="toast"], 
@@ -589,12 +595,18 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     [data-tid="meeting-toolbar"],
     [data-tid="calling-control-bar"],
     [data-tid="call-controls"],
+    [role="toolbar"],
+    div[role="toolbar"],
     .fui-Toolbar,
     div[class*="calling-control-bar"],
-    div[class*="meeting-toolbar"] {
+    div[class*="meeting-toolbar"],
+    div[aria-label*="meeting controls" i],
+    div[aria-label*="call controls" i] {
         display: none !important;
         opacity: 0 !important;
         visibility: hidden !important;
+        height: 0 !important;
+        overflow: hidden !important;
         pointer-events: none !important;
     }
 `;
@@ -645,26 +657,25 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                         }
                     }
 
-                    // Hide Meeting Controls
-                    const peopleBtn = document.querySelector('button[aria-label="People"], button[aria-label="Raise"], button[aria-label="View"], button[aria-label="React"]');
-                    if (peopleBtn) {
-                        let toolbar = peopleBtn.parentElement;
+                    // Hide Meeting Controls & Toolbar
+                    const controlBtns = document.querySelectorAll('button[aria-label*="People" i], button[aria-label*="Raise" i], button[aria-label*="View" i], button[aria-label*="React" i], button[aria-label*="Chat" i], button[data-tid*="toolbar"], [role="toolbar"] button');
+                    controlBtns.forEach(btn => {
+                        let toolbar = btn.parentElement;
                         for (let i = 0; i < 12; i++) {
                             if (toolbar && toolbar.tagName !== 'BODY') {
                                 const r = toolbar.getBoundingClientRect();
-                                if (r.width > 200 && r.height < 150) {
+                                if (r.width > 150 && r.height < 180 && r.top < 250) {
+                                    toolbar.style.setProperty('display', 'none', 'important');
                                     toolbar.style.setProperty('opacity', '0', 'important');
+                                    toolbar.style.setProperty('visibility', 'hidden', 'important');
                                     toolbar.style.setProperty('pointer-events', 'none', 'important');
                                     break;
                                 }
                                 toolbar = toolbar.parentElement;
                             }
                         }
-                    }
+                    });
 
-                    // (Participants pane hiding removed)
-
-                    // (Force video stage removed so roster can share screen space)
                 } catch (err) {}
             }, 1000);
           });
@@ -705,7 +716,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     if (options.onStatus) await options.onStatus('RECORDING');
     console.log('🎥 Starting FFmpeg recording for live class...');
     const recordMs = maxMs;
-    const cropF = isNativeFullScreen ? 'crop=1280:720:0:85,scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2' : 'crop=1204:604:76:200,scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2';
+    const cropF = isNativeFullScreen ? 'crop=1280:640:0:145,scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2' : 'crop=1204:604:76:200,scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2';
       ffmpeg = await startRecorder(outputPath, Math.floor(recordMs / 1000), cropF);
 
     const startTime = Date.now();

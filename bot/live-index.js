@@ -111,6 +111,7 @@ async function processItem(item) {
   const outputPath = path.join(OUTPUT_DIR, `${Date.now()}-${safeName}.mp4`);
   let targetVideoPath = outputPath;
   let skipRecording = false;
+  let result = null;
 
   // Check if this is a retry and we can download existing recorded artifact from previous run
   if (item.run_url) {
@@ -142,7 +143,7 @@ async function processItem(item) {
       const creds = credsSnap.val();
 
       await ref.update({ status: 'RECORDING', updatedAt: Date.now() });
-      const result = await recordLiveClass(item.url, outputPath, cookies, { 
+      result = await recordLiveClass(item.url, outputPath, cookies, { 
         maxMs: item.maxMs || MAX_MS,
         scheduledTime: item.scheduledTime || 0,
         resumeTime: item.resumeTime || 0,
@@ -196,7 +197,7 @@ async function processItem(item) {
     });
     console.log(`✅ ${item.title} uploaded: ${youtubeUrl}`);
 
-    if (result.wasSplit) {
+    if (result && result.wasSplit) {
       const nextPartNum = (item.part || 1) + 1;
       const baseTitle = (item.title || safeName).replace(/ \(Part \d+\)$/, '');
       const newTitle = `${baseTitle} (Part ${nextPartNum})`;
