@@ -585,7 +585,13 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     .fui-Tooltip,
     .ui-tooltip,
     div[aria-label*="notification" i],
-    div[aria-live="polite"] {
+    div[aria-live="polite"],
+    [data-tid="meeting-toolbar"],
+    [data-tid="calling-control-bar"],
+    [data-tid="call-controls"],
+    .fui-Toolbar,
+    div[class*="calling-control-bar"],
+    div[class*="meeting-toolbar"] {
         display: none !important;
         opacity: 0 !important;
         visibility: hidden !important;
