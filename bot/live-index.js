@@ -63,22 +63,24 @@ async function claimNextWaiting() {
     
     for (const selected of candidates) {
         const itemRef = db.ref(`live_queue/${selected.id}`);
-        // Atomic transaction to claim item
-        const txResult = await itemRef.child('status').transaction((currentStatus) => {
-            if (currentStatus === 'WAITING') {
-                return 'STARTING';
+        // Atomic transaction on full object to safely claim item
+        const txResult = await itemRef.transaction((current) => {
+            if (current === null) return current; // sync initial data from server
+            if (current.status === 'WAITING') {
+                current.status = 'STARTING';
+                current.startedAt = Date.now();
+                current.error = null;
+                if (process.env.GITHUB_REPOSITORY && process.env.GITHUB_RUN_ID) {
+                    current.run_url = 'https://github.com/' + process.env.GITHUB_REPOSITORY + '/actions/runs/' + process.env.GITHUB_RUN_ID;
+                }
+                return current;
             }
-            return; // abort if already claimed by another runner
+            return; // abort if already claimed
         });
         
-        if (txResult.committed) {
-            await itemRef.update({
-                startedAt: Date.now(),
-                error: null,
-                run_url: process.env.GITHUB_REPOSITORY && process.env.GITHUB_RUN_ID ? 'https://github.com/' + process.env.GITHUB_REPOSITORY + '/actions/runs/' + process.env.GITHUB_RUN_ID : null
-            });
+        if (txResult.committed && txResult.snapshot.exists()) {
             console.log(`✅ Claimed live class [${selected.id}] (${selected.title}) for recording.`);
-            return selected;
+            return { id: selected.id, ...txResult.snapshot.val() };
         }
     }
     return null;

@@ -362,15 +362,16 @@ async function triggerLiveBotDispatch(token, count = 1) {
     let successCount = 0;
     for (let i = 0; i < count; i++) {
         try {
-            const res = await fetch('https://api.github.com/repos/onessingh/teams-bot/dispatches', {
+            const res = await fetch('https://api.github.com/repos/onessingh/teams-bot/actions/workflows/live-bot.yml/dispatches', {
                 method: 'POST',
                 headers: {
-                    'Accept': 'application/vnd.github.v3+json',
-                    'Authorization': 'token ' + token
+                    'Accept': 'application/vnd.github+json',
+                    'Authorization': `Bearer ${token}`,
+                    'X-GitHub-Api-Version': '2022-11-28'
                 },
-                body: JSON.stringify({ event_type: 'start-live-processing' })
+                body: JSON.stringify({ ref: 'main' })
             });
-            if (res.ok) successCount++;
+            if (res.ok || res.status === 204) successCount++;
         } catch(e) {}
         if (i < count - 1) await new Promise(r => setTimeout(r, 600));
     }
