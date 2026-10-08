@@ -218,24 +218,25 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
       colorScheme: 'dark'  // Force dark mode in Teams
     });
 
-    // Auto-close any external popup tabs (e.g. support.microsoft.com "Learn more" pages)
-    context.on('page', async (popup) => {
-      try {
-        await popup.waitForLoadState('domcontentloaded');
-        const targetUrl = popup.url();
-        if (!targetUrl.includes('teams.microsoft') && !targetUrl.includes('teams.live') && !targetUrl.includes('teams.cloud')) {
-          console.log('[DEBUG] Auto-closing external popup tab:', targetUrl);
-          await popup.close();
-        }
-      } catch(e) {}
-    });
-
     if (Array.isArray(cookies) && cookies.length) {
       await context.addCookies(cookies);
     }
 
     const page = await context.newPage();
     page.on('console', msg => console.log(`[Teams Live] ${msg.text()}`));
+
+    // Auto-close external support tabs if opened in a secondary tab (never close main recorder page!)
+    context.on('page', async (popup) => {
+      try {
+        if (popup === page) return; // Never close main meeting page!
+        await popup.waitForLoadState('domcontentloaded');
+        const targetUrl = popup.url();
+        if (targetUrl.includes('support.microsoft.com') || targetUrl.includes('learn.microsoft.com')) {
+          console.log('[DEBUG] Auto-closing external support tab:', targetUrl);
+          await popup.close().catch(() => {});
+        }
+      } catch(e) {}
+    });
 
     console.log('[DEBUG] Opening Teams Live Meeting...');
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 });
