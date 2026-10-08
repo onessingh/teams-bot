@@ -592,14 +592,34 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     .ui-tooltip,
     div[aria-label*="notification" i],
     div[aria-live="polite"],
+    [data-tid*="lobby"],
+    div[class*="lobby-notification"],
+    div[class*="LobbyNotification"],
+    div[class*="lobby-admission"],
+    div[class*="LobbyAdmission"],
+    div[aria-label*="lobby" i],
+    #roster-button,
+    #view-button,
+    #chat-button,
+    #hangup-button,
+    #mic-button,
+    #camera-button,
+    #share-button,
+    #raise-hand-button,
+    [data-tid="roster-button"],
+    [data-tid="view-button"],
+    [data-tid="hangup-button"],
     [data-tid="meeting-toolbar"],
     [data-tid="calling-control-bar"],
     [data-tid="call-controls"],
+    [data-tid*="control-bar"],
+    [data-tid*="toolbar"],
     [role="toolbar"],
     div[role="toolbar"],
     .fui-Toolbar,
     div[class*="calling-control-bar"],
     div[class*="meeting-toolbar"],
+    div[class*="ControlBar"],
     div[aria-label*="meeting controls" i],
     div[aria-label*="call controls" i] {
         display: none !important;
@@ -625,7 +645,29 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                             btn.click();
                         }
                     });
-                    // Hide Top Header
+
+                    // Hide Lobby Notifications ("Waiting in the lobby", "Deny", "Admit")
+                    document.querySelectorAll('div, section, span').forEach(el => {
+                        const text = (el.textContent || '').toLowerCase();
+                        if (text.includes('waiting in the lobby')) {
+                            let container = el;
+                            for (let i = 0; i < 6; i++) {
+                                if (container && container.tagName !== 'BODY') {
+                                    const r = container.getBoundingClientRect();
+                                    if (r.width < 600 && r.height < 350 && r.top < 450) {
+                                        container.style.setProperty('display', 'none', 'important');
+                                        container.style.setProperty('opacity', '0', 'important');
+                                        container.style.setProperty('visibility', 'hidden', 'important');
+                                        container.style.setProperty('pointer-events', 'none', 'important');
+                                        break;
+                                    }
+                                    container = container.parentElement;
+                                }
+                            }
+                        }
+                    });
+
+                    // Hide Top Header & App Bar
                     const searchInput = document.querySelector('input[placeholder*="Ctrl+Alt"], input[placeholder*="Search"], input[id*="search"]');
                     if (searchInput) {
                         let parent = searchInput.parentElement;
@@ -656,6 +698,20 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                             }
                         }
                     }
+
+                    // Hide Top Toolbar / Controls / Timer at top of window (y <= 15)
+                    document.querySelectorAll('div').forEach(el => {
+                        const r = el.getBoundingClientRect();
+                        if (r.top <= 15 && r.height > 20 && r.height < 120 && r.width > window.innerWidth * 0.25) {
+                            const text = (el.textContent || '').toLowerCase();
+                            if (text.includes('chat') || text.includes('people') || text.includes('view') || text.includes('leave') || text.includes('mic') || text.includes('camera') || text.includes('share') || /\b\d{1,2}:\d{2}\b/.test(text)) {
+                                el.style.setProperty('display', 'none', 'important');
+                                el.style.setProperty('opacity', '0', 'important');
+                                el.style.setProperty('visibility', 'hidden', 'important');
+                                el.style.setProperty('pointer-events', 'none', 'important');
+                            }
+                        }
+                    });
 
                     // Hide Meeting Controls & Toolbar
                     const controlBtns = document.querySelectorAll('button[aria-label*="People" i], button[aria-label*="Raise" i], button[aria-label*="View" i], button[aria-label*="React" i], button[aria-label*="Chat" i], button[data-tid*="toolbar"], [role="toolbar"] button');
