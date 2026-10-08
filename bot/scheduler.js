@@ -51,72 +51,71 @@ async function checkAndTrigger() {
     items.push({ id: child.key, ...child.val() });
   });
 
-  for (const item of items) {
-    const status = item.status || '';
-    const scheduledTime = item.scheduledTime || 0;
-
-    console.log(`[Scheduler] Item: ${item.title || item.id} | Status: ${status} | Scheduled: ${new Date(scheduledTime).toISOString()}`);
-
-    // Only trigger for WAITING items within the time window
-    if (status !== 'WAITING') {
-      console.log(`[Scheduler] Skipping — status is ${status}`);
-      continue;
-    }
-
-    if (scheduledTime <= 0) {
-      console.log(`[Scheduler] Skipping — no scheduledTime`);
-      continue;
-    }
-
-    const isInWindow = now >= scheduledTime - TRIGGER_WINDOW_MS && now <= scheduledTime + LATE_WINDOW_MS;
-    if (!isInWindow) {
-      const minsUntil = Math.floor((scheduledTime - now) / 60000);
-      console.log(`[Scheduler] Skipping — ${minsUntil} mins away (outside 20 min window)`);
-      continue;
-    }
-
-    // Check if a Live Class Worker is already running
-    console.log('[Scheduler] Class is within trigger window! Checking for already-running worker...');
+  // 1. Fetch currently running workers (status = in_progress or queued)
+  console.log('[Scheduler] Checking running Live Class Workers on GitHub...');
+  let activeWorkers = 0;
+  try {
     const runsRes = await fetch(
-      `https://api.github.com/repos/${REPO}/actions/workflows/live-bot.yml/runs?status=in_progress&per_page=5`,
+      `https://api.github.com/repos/${REPO}/actions/workflows/live-bot.yml/runs?per_page=10`,
       { headers: { 'Authorization': `Bearer ${GH_TOKEN}`, 'Accept': 'application/vnd.github.v3+json' } }
     );
     const runsData = await runsRes.json();
-    const alreadyRunning = runsData.workflow_runs && runsData.workflow_runs.length > 0;
-    
-    if (alreadyRunning) {
-      console.log('[Scheduler] Live Class Worker already in_progress. Skipping trigger.');
-      triggered = true; // Consider it as triggered
-      continue;
+    if (runsData.workflow_runs) {
+      activeWorkers = runsData.workflow_runs.filter(r => r.status === 'in_progress' || r.status === 'queued').length;
     }
+  } catch(e) {
+    console.log('[Scheduler] Error checking running workers:', e.message);
+  }
+  console.log(`[Scheduler] Currently active workers running/queued: ${activeWorkers}`);
 
-    // Trigger the live-bot workflow
-    console.log(`[Scheduler] Triggering Live Class Worker for: ${item.title || item.id}`);
-    const triggerRes = await fetch(
-      `https://api.github.com/repos/${REPO}/actions/workflows/live-bot.yml/dispatches`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${GH_TOKEN}`,
-          'Accept': 'application/vnd.github.v3+json',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ ref: 'main' })
+  // 2. Filter WAITING classes in trigger window
+  const waitingItems = items.filter(item => {
+    const status = item.status || '';
+    const scheduledTime = item.scheduledTime || 0;
+    if (status !== 'WAITING') return false;
+    if (scheduledTime <= 0) return true; // immediate class
+    return now >= scheduledTime - TRIGGER_WINDOW_MS && now <= scheduledTime + LATE_WINDOW_MS;
+  });
+
+  console.log(`[Scheduler] WAITING classes in window: ${waitingItems.length}`);
+
+  if (waitingItems.length === 0) {
+    console.log('[Scheduler] No WAITING classes in trigger window right now.');
+    return false;
+  }
+
+  // 3. Trigger a separate Live Class Worker for EVERY WAITING class!
+  let triggeredCount = 0;
+  for (const item of waitingItems) {
+    console.log(`[Scheduler] Triggering Live Class Worker for: ${item.title || item.id} (Account: ${item.accountId || 'default'})`);
+    try {
+      const triggerRes = await fetch(
+        `https://api.github.com/repos/${REPO}/actions/workflows/live-bot.yml/dispatches`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${GH_TOKEN}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ ref: 'main' })
+        }
+      );
+
+      if (triggerRes.status === 204) {
+        console.log(`[Scheduler] ✅ Successfully triggered Live Class Worker for [${item.title || item.id}]`);
+        triggeredCount++;
+        await new Promise(r => setTimeout(r, 1000));
+      } else {
+        const errText = await triggerRes.text();
+        console.error(`[Scheduler] ❌ Failed to trigger: ${triggerRes.status} — ${errText}`);
       }
-    );
-
-    if (triggerRes.status === 204) {
-      console.log(`[Scheduler] ✅ Successfully triggered Live Class Worker!`);
-      triggered = true;
-      // Only trigger once per scheduler run
-      break;
-    } else {
-      const errText = await triggerRes.text();
-      console.error(`[Scheduler] ❌ Failed to trigger: ${triggerRes.status} — ${errText}`);
+    } catch(err) {
+      console.error(`[Scheduler] Trigger error:`, err.message);
     }
   }
 
-  return triggered;
+  return triggeredCount > 0;
 }
 
 checkAndTrigger()
