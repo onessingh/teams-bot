@@ -146,33 +146,41 @@ async function findPipRect(page) {
   });
 }
 
-// Migration banner ("Same app, better security") ko close karta hai.
-// Return: banner abhi bhi bacha ho to uski height (px), warna 0.
+// Migration banner ("Same app, better security") ko safely hide karta hai without clicking "Learn more" links.
 async function dismissMigrationBanner(page) {
-  const probe = () => page.evaluate(() => {
-    // Sabse chhota element jisme banner ka text ho
-    let best = null;
-    for (const el of document.querySelectorAll('div, section, header')) {
-      const t = (el.innerText || '').toLowerCase();
-      if (!t.includes('better security') && !t.includes('teams.cloud.microsoft')) continue;
-      const r = el.getBoundingClientRect();
-      if (r.height < 10 || r.height > 80 || r.width < 300) continue;
-      if (!best || r.height * r.width < best.h * best.w) best = { el, h: r.height, w: r.width };
-    }
-    if (!best) return { found: false, height: 0 };
-    // Close (X) button banner ke andar
-    const btn = Array.from(best.el.querySelectorAll('button, [role="button"]')).pop();
-    if (btn) btn.click();
-    return { found: true, height: Math.round(best.h) };
-  });
+  try {
+    return await page.evaluate(() => {
+      let best = null;
+      for (const el of document.querySelectorAll('div, section, header')) {
+        const t = (el.innerText || '').toLowerCase();
+        if (!t.includes('better security') && !t.includes('teams.cloud.microsoft')) continue;
+        const r = el.getBoundingClientRect();
+        if (r.height < 10 || r.height > 120 || r.width < 300) continue;
+        if (!best || r.height * r.width < best.h * best.w) best = { el, h: r.height, w: r.width };
+      }
+      if (!best) return 0;
+      
+      // ONLY click explicit close (X) button (never "Learn more" link!)
+      const closeBtn = Array.from(best.el.querySelectorAll('button, [role="button"], [aria-label]')).find(b => {
+        const label = ((b.getAttribute('aria-label') || '') + ' ' + (b.getAttribute('title') || '') + ' ' + (b.textContent || '')).toLowerCase();
+        return (label.includes('close') || label.includes('dismiss')) && !label.includes('learn') && !label.includes('more');
+      });
+      if (closeBtn) {
+        try { closeBtn.click(); } catch(e){}
+      }
 
-  for (let i = 0; i < 3; i++) {
-    const res = await probe();
-    if (!res.found) return 0;            // banner nahi hai ya close ho gaya
-    await page.waitForTimeout(1200);
+      // Hide the banner container safely in DOM
+      best.el.style.setProperty('display', 'none', 'important');
+      best.el.style.setProperty('opacity', '0', 'important');
+      best.el.style.setProperty('visibility', 'hidden', 'important');
+      best.el.style.setProperty('height', '0px', 'important');
+      best.el.style.setProperty('margin', '0px', 'important');
+      best.el.style.setProperty('padding', '0px', 'important');
+      return 0;
+    });
+  } catch(e) {
+    return 0;
   }
-  const last = await probe();
-  return last.found ? last.height : 0;   // abhi bhi hai -> offset return
 }
 
 async function recordLiveClass(url, outputPath, cookies, options = {}) {
@@ -208,6 +216,18 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
       viewport: null,
       permissions: ['microphone', 'camera'],
       colorScheme: 'dark'  // Force dark mode in Teams
+    });
+
+    // Auto-close any external popup tabs (e.g. support.microsoft.com "Learn more" pages)
+    context.on('page', async (popup) => {
+      try {
+        await popup.waitForLoadState('domcontentloaded');
+        const targetUrl = popup.url();
+        if (!targetUrl.includes('teams.microsoft') && !targetUrl.includes('teams.live') && !targetUrl.includes('teams.cloud')) {
+          console.log('[DEBUG] Auto-closing external popup tab:', targetUrl);
+          await popup.close();
+        }
+      } catch(e) {}
     });
 
     if (Array.isArray(cookies) && cookies.length) {
