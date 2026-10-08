@@ -384,6 +384,11 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             const hasVideoGallery = !!document.querySelector('[data-tid="video-gallery"], [data-tid="calling-roster-stage"]');
             if (hasVideoGallery) return true;
             
+            // Check for transient error screen ("We ran into a problem")
+            if (lowerText.includes('we ran into a problem') || lowerText.includes('try again in a few minutes') || lowerText.includes('something went wrong')) {
+                return 'error_screen';
+            }
+            
             // Check for instant drop/kick
             if (lowerText.includes('rejoin') || lowerText.includes('returning to teams meetings') || lowerText.includes('did you leave by mistake')) {
                 return 'dropped';
@@ -395,6 +400,17 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         if (isAdmitted === true) {
             admitted = true;
             break;
+        } else if (isAdmitted === 'error_screen') {
+            console.log('[DEBUG] ⚠️ "We ran into a problem" screen detected. Attempting to click "Try again" or reload meeting...');
+            try {
+                const tryAgainBtn = page.locator('button:has-text("Try again"), button:has-text("Rejoin"), button:has-text("Refresh")').first();
+                if (await tryAgainBtn.isVisible({ timeout: 2000 })) {
+                    await tryAgainBtn.click({ force: true });
+                } else {
+                    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 });
+                }
+            } catch(e) {}
+            await page.waitForTimeout(5000);
         } else if (isAdmitted === 'dropped') {
             console.log('[DEBUG] Call dropped immediately upon joining (Rejoin screen detected). Exiting early.');
             break; // will fall through to !admitted check and exit
