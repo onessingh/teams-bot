@@ -699,10 +699,10 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                         }
                     }
 
-                    // Hide Top Toolbar / Controls / Timer at top of window (y <= 15)
+                    // Hide Top Toolbar / Controls / Timer anywhere in top 200px (y < 200)
                     document.querySelectorAll('div').forEach(el => {
                         const r = el.getBoundingClientRect();
-                        if (r.top <= 15 && r.height > 20 && r.height < 120 && r.width > window.innerWidth * 0.25) {
+                        if (r.top >= 0 && r.top < 200 && r.height > 15 && r.height < 150 && r.width > window.innerWidth * 0.2) {
                             const text = (el.textContent || '').toLowerCase();
                             if (text.includes('chat') || text.includes('people') || text.includes('view') || text.includes('leave') || text.includes('mic') || text.includes('camera') || text.includes('share') || /\b\d{1,2}:\d{2}\b/.test(text)) {
                                 el.style.setProperty('display', 'none', 'important');
