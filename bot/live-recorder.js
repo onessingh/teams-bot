@@ -502,67 +502,77 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
 
     // Try to activate "Hide me" and "Full screen" using aggressive locators
     try {
+      console.log('[DEBUG] Searching for View / Layout button safely inside meeting toolbar...');
+      
+      // Send keyboard shortcuts to force fullscreen mode in Teams
+      try { await page.keyboard.press('Control+Shift+F'); } catch(e){}
+      try { await page.keyboard.press('Alt+Shift+F'); } catch(e){}
+      try { await page.keyboard.press('F11'); } catch(e){}
+      try { await page.evaluate(() => document.documentElement.requestFullscreen().catch(() => {})); } catch(e){}
 
-    console.log('[DEBUG] Searching for View button safely inside meeting toolbar...');
-        // ONLY look for View inside the actual meeting toolbar to avoid clicking "View Apps" in Teams sidebar!
-        const viewBtn = page.locator('[data-tid="meeting-toolbar"] button, [data-tid="calling-status-bar"] button, [id="roster-button"]~button, button[aria-label="View"]').filter({ hasText: /^View$/i }).first();
-        const viewBtnFallback = page.locator('[data-tid="meeting-toolbar"] button[aria-label*="View"], [data-tid="meeting-toolbar"] button[data-tid*="view"]').first();
-        const targetViewBtn = (await viewBtn.isVisible({ timeout: 2000 })) ? viewBtn : viewBtnFallback;
+      // Look for View / View options / Layout button in meeting toolbar
+      const viewCandidates = [
+        page.locator('[data-tid="meeting-toolbar"] button, [data-tid="calling-status-bar"] button, [role="toolbar"] button').filter({ hasText: /^View$/i }).first(),
+        page.locator('button[aria-label="View"], button[aria-label*="View" i], button[data-tid*="view" i]').first(),
+        page.locator('button[aria-label*="Layout" i], button[data-tid*="layout" i]').first(),
+        page.locator('[data-tid="more-options-button"], button[aria-label*="More" i]').first()
+      ];
+      
+      let targetViewBtn = null;
+      for (const cand of viewCandidates) {
+        if (await cand.isVisible({ timeout: 1500 })) {
+          targetViewBtn = cand;
+          break;
+        }
+      }
+      
+      if (targetViewBtn) {
+        await targetViewBtn.click({ force: true });
+        console.log('[DEBUG] Clicked View / Layout button.');
+        await page.waitForTimeout(1500);
         
-        if (await targetViewBtn.isVisible({ timeout: 2000 })) {
-            await targetViewBtn.click();
-            console.log('[DEBUG] Clicked View button.');
+        // Full Screen option
+        const fullScreenBtn = page.locator('menuitem, button, div[role="menuitem"], span').filter({ hasText: /Full screen|Fullscreen|Enter full screen/i }).first();
+        if (await fullScreenBtn.isVisible({ timeout: 1000 })) {
+          await fullScreenBtn.click({ force: true });
+          console.log('[DEBUG] Clicked Full screen menu item.');
+          isNativeFullScreen = true;
+          await page.waitForTimeout(1500);
+          try { await targetViewBtn.click({ force: true }); await page.waitForTimeout(1500); } catch(e){}
+        }
+        
+        // Check for Hide me directly
+        const hideMeBtn = page.locator('menuitem, button, div[role="menuitem"], span').filter({ hasText: /Hide me|Hide self|Hide my video/i }).first();
+        let hideMeClicked = false;
+        
+        if (await hideMeBtn.isVisible({ timeout: 1000 })) {
+          await hideMeBtn.click({ force: true });
+          console.log('[DEBUG] Clicked Hide me directly.');
+          hideMeClicked = true;
+        } else {
+          // Try More options option
+          const moreOptionsBtn = page.locator('menuitem, button, div[role="menuitem"]').filter({ hasText: /More options/i }).first();
+          if (await moreOptionsBtn.isVisible({ timeout: 1000 })) {
+            await moreOptionsBtn.click({ force: true });
+            console.log('[DEBUG] Clicked More options in View menu.');
             await page.waitForTimeout(1500);
             
-            // Full Screen option
-            const fullScreenBtn = page.locator('menuitem, button, div[role="menuitem"]').filter({ hasText: /Full screen/i }).first();
-            if (await fullScreenBtn.isVisible({ timeout: 1000 })) {
-                await fullScreenBtn.click();
-                console.log('[DEBUG] Clicked Full screen.');
-                isNativeFullScreen = true;
-                await page.waitForTimeout(1500);
-                // Click View again because menu closes
-                await targetViewBtn.click();
-                await page.waitForTimeout(1500);
-            }
-            
-            // Check for Hide me directly
-            const hideMeBtn = page.locator('menuitem, button, div[role="menuitem"], span').filter({ hasText: /Hide me/i }).first();
-            let hideMeClicked = false;
-            
             if (await hideMeBtn.isVisible({ timeout: 1000 })) {
-                await hideMeBtn.click();
-                console.log('[DEBUG] Clicked Hide me directly.');
-                hideMeClicked = true;
-            } else {
-                // Try More options option
-                const moreOptionsBtn = page.locator('menuitem, button, div[role="menuitem"]').filter({ hasText: /More options/i }).first();
-                if (await moreOptionsBtn.isVisible({ timeout: 1000 })) {
-                    await moreOptionsBtn.click();
-                    console.log('[DEBUG] Clicked More options.');
-                    await page.waitForTimeout(1500);
-                    
-                    if (await hideMeBtn.isVisible({ timeout: 1000 })) {
-                        await hideMeBtn.click();
-                        console.log('[DEBUG] Clicked Hide me after More options.');
-                        hideMeClicked = true;
-                    }
-                }
+              await hideMeBtn.click({ force: true });
+              console.log('[DEBUG] Clicked Hide me after More options.');
+              hideMeClicked = true;
             }
-            
-            if (!hideMeClicked) console.log('[DEBUG] Hide me button not found in menu.');
-            
-            await page.keyboard.press('Escape'); // close menu
-        } else {
-            console.log('[DEBUG] View button not found entirely.');
+          }
         }
+        
+        if (!hideMeClicked) console.log('[DEBUG] Hide me button not found in menu.');
+        await page.keyboard.press('Escape'); // close menu
+      } else {
+        console.log('[DEBUG] View/Layout button not found in toolbar.');
+      }
     } catch (e) {
-        console.log('[DEBUG] Could not click Hide me/Full screen:', e.message);
+      console.log('[DEBUG] Could not click Hide me/Full screen:', e.message);
     }
-
-    // NOTE: We do NOT open the People panel manually.
-    // The participants list shows naturally on the right side when the meeting is in full view.
-    // Clicking People button from mini-PiP state opens "All contacts" sidebar instead.
 
     // Hide UI
     try {
@@ -572,6 +582,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         try {
           await frame.evaluate(() => {
             const style = document.createElement('style');
+            style.id = 'bot-hider-style';
             style.innerHTML = `
     * { cursor: none !important; }
     header,
@@ -580,6 +591,8 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     div[class*="app-header"],
     div[class*="header-bar"],
     div[class*="top-bar"],
+    div[class*="calling-header"],
+    div[data-tid="calling-status-bar"],
     div[role="alert"], 
     div[role="banner"],
     div[data-tid^="toast"], 
@@ -626,11 +639,31 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         opacity: 0 !important;
         visibility: hidden !important;
         height: 0 !important;
+        max-height: 0 !important;
         overflow: hidden !important;
         pointer-events: none !important;
+        z-index: -99999 !important;
+    }
+
+    [data-tid="calling-roster-stage"],
+    [data-tid="video-gallery"],
+    [data-tid="meeting-canvas"],
+    [data-tid="screen-sharing-canvas"],
+    div[class*="calling-stage"],
+    div[class*="video-gallery"] {
+        top: 0 !important;
+        left: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        max-width: 100vw !important;
+        max-height: 100vh !important;
+        margin: 0 !important;
+        padding: 0 !important;
     }
 `;
-            document.head.appendChild(style);
+            if (!document.getElementById('bot-hider-style')) {
+                document.head.appendChild(style);
+            }
 
             setInterval(() => {
                 try {
@@ -647,7 +680,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                     });
 
                     // Hide Lobby Notifications ("Waiting in the lobby", "Deny", "Admit")
-                    document.querySelectorAll('div, section, span').forEach(el => {
+                    document.querySelectorAll('*').forEach(el => {
                         const text = (el.textContent || '').toLowerCase();
                         if (text.includes('waiting in the lobby')) {
                             let container = el;
@@ -674,7 +707,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                         for(let i = 0; i < 15; i++) {
                             if (parent && parent.tagName !== 'BODY') {
                                 const r = parent.getBoundingClientRect();
-                                if (r.height < 120 && r.width > window.innerWidth * 0.4 && r.top <= 0) {
+                                if (r.height < 150 && r.width > window.innerWidth * 0.4 && r.top <= 80) {
                                     parent.style.setProperty('display', 'none', 'important');
                                     break;
                                 }
@@ -699,12 +732,13 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                         }
                     }
 
-                    // Hide Top Toolbar / Controls / Timer anywhere in top 200px (y < 200)
-                    document.querySelectorAll('div').forEach(el => {
+                    // Hide Top Toolbar / Controls / Timer anywhere in top 250px (y < 250)
+                    document.querySelectorAll('*').forEach(el => {
+                        if (el.tagName === 'BODY' || el.tagName === 'HTML' || el.tagName === 'STYLE' || el.tagName === 'SCRIPT') return;
                         const r = el.getBoundingClientRect();
-                        if (r.top >= 0 && r.top < 200 && r.height > 15 && r.height < 150 && r.width > window.innerWidth * 0.2) {
-                            const text = (el.textContent || '').toLowerCase();
-                            if (text.includes('chat') || text.includes('people') || text.includes('view') || text.includes('leave') || text.includes('mic') || text.includes('camera') || text.includes('share') || /\b\d{1,2}:\d{2}\b/.test(text)) {
+                        if (r.top >= -20 && r.top < 250 && r.height > 15 && r.height < 250 && r.width > window.innerWidth * 0.2) {
+                            const text = ((el.textContent || '') + ' ' + (el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('data-tid') || '')).toLowerCase();
+                            if (text.includes('chat') || text.includes('people') || text.includes('view') || text.includes('leave') || text.includes('mic') || text.includes('camera') || text.includes('share') || text.includes('roster') || text.includes('react') || /\b\d{1,2}:\d{2}\b/.test(text)) {
                                 el.style.setProperty('display', 'none', 'important');
                                 el.style.setProperty('opacity', '0', 'important');
                                 el.style.setProperty('visibility', 'hidden', 'important');
@@ -720,7 +754,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                         for (let i = 0; i < 12; i++) {
                             if (toolbar && toolbar.tagName !== 'BODY') {
                                 const r = toolbar.getBoundingClientRect();
-                                if (r.width > 150 && r.height < 180 && r.top < 250) {
+                                if (r.width > 150 && r.height < 200 && r.top < 280) {
                                     toolbar.style.setProperty('display', 'none', 'important');
                                     toolbar.style.setProperty('opacity', '0', 'important');
                                     toolbar.style.setProperty('visibility', 'hidden', 'important');
