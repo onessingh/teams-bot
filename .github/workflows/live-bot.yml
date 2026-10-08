@@ -60,9 +60,8 @@ jobs:
           YOUTUBE_CLIENT_ID_3: ${{ secrets.YOUTUBE_CLIENT_ID_3 }}
           YOUTUBE_CLIENT_SECRET_3: ${{ secrets.YOUTUBE_CLIENT_SECRET_3 }}
           YOUTUBE_REFRESH_TOKEN_3: ${{ secrets.YOUTUBE_REFRESH_TOKEN_3 }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node bot/live-index.js
-
-
 
       - name: Save recorded video artifact if upload failed
         if: always()
@@ -72,6 +71,5 @@ jobs:
           path: |
             *.mp4
             bot/downloads/*.mp4
-              recordings/*.mp4
+            recordings/*.mp4
           retention-days: 3
-

@@ -54,8 +54,8 @@ async function claimNextWaiting() {
     
     snap.forEach(child => {
         const item = child.val() || {};
-        if (item.status === 'WAITING' && item.url) {
-            if (!item.scheduledTime || now >= item.scheduledTime - (25 * 60 * 1000)) {
+        if ((item.status === 'WAITING' || item.status === 'RETRY_REQUESTED') && item.url) {
+            if (!item.scheduledTime || now >= item.scheduledTime - (25 * 60 * 1000) || item.status === 'RETRY_REQUESTED') {
                 candidates.push({ id: child.key, ...item });
             }
         }
@@ -66,7 +66,7 @@ async function claimNextWaiting() {
         // Atomic transaction on full object to safely claim item
         const txResult = await itemRef.transaction((current) => {
             if (current === null) return current; // sync initial data from server
-            if (current.status === 'WAITING') {
+            if (current.status === 'WAITING' || current.status === 'RETRY_REQUESTED') {
                 current.status = 'STARTING';
                 current.startedAt = Date.now();
                 current.error = null;
@@ -109,56 +109,81 @@ async function processItem(item) {
     .replace(/[^a-z0-9._-]+/gi, '_')
     .slice(0, 80);
   const outputPath = path.join(OUTPUT_DIR, `${Date.now()}-${safeName}.mp4`);
+  let targetVideoPath = outputPath;
+  let skipRecording = false;
+
+  // Check if this is a retry and we can download existing recorded artifact from previous run
+  if (item.run_url) {
+    const runMatch = item.run_url.match(/runs\/(\d+)/);
+    if (runMatch && runMatch[1]) {
+      const runId = runMatch[1];
+      console.log(`[RETRY] Attempting to download saved video artifact from GitHub Run ID: ${runId}...`);
+      try {
+        const { execSync } = require('child_process');
+        execSync(`gh run download ${runId} -n recorded-video --dir "${OUTPUT_DIR}"`, { stdio: 'inherit' });
+        const downloadedFiles = fs.readdirSync(OUTPUT_DIR).filter(f => f.endsWith('.mp4'));
+        if (downloadedFiles.length > 0) {
+          targetVideoPath = path.join(OUTPUT_DIR, downloadedFiles[0]);
+          console.log(`[RETRY] Found downloaded video backup: ${targetVideoPath}`);
+          skipRecording = true;
+        }
+      } catch (err) {
+        console.log('[RETRY] Artifact download via gh CLI failed or unavailable:', err.message);
+      }
+    }
+  }
 
   try {
-    await ref.update({ status: 'OPENING_RECORDING', updatedAt: Date.now() });
-    const cookies = await getCookies(item.accountId);
-    const target = item.accountId || 'teams_creds';
-    const credsSnap = await db.ref('config/' + target).once('value');
-    const creds = credsSnap.val();
+    if (!skipRecording) {
+      await ref.update({ status: 'OPENING_RECORDING', updatedAt: Date.now() });
+      const cookies = await getCookies(item.accountId);
+      const target = item.accountId || 'teams_creds';
+      const credsSnap = await db.ref('config/' + target).once('value');
+      const creds = credsSnap.val();
 
-    await ref.update({ status: 'RECORDING', updatedAt: Date.now() });
-    const result = await recordLiveClass(item.url, outputPath, cookies, { 
-      maxMs: item.maxMs || MAX_MS,
-      scheduledTime: item.scheduledTime || 0,
-      resumeTime: item.resumeTime || 0,
-      creds: creds,
-      onStatus: async (statusStr) => { await ref.update({ status: statusStr, updatedAt: Date.now() }); },
-      onFrame: async (b64) => { await ref.update({ live_frame: b64 }); },
-      onAuthError: async (b64Image) => {
-        await db.ref('state/mfa_screenshot').set(b64Image);
-        await db.ref('state/login_status').set('WAITING_FOR_MFA');
+      await ref.update({ status: 'RECORDING', updatedAt: Date.now() });
+      const result = await recordLiveClass(item.url, outputPath, cookies, { 
+        maxMs: item.maxMs || MAX_MS,
+        scheduledTime: item.scheduledTime || 0,
+        resumeTime: item.resumeTime || 0,
+        creds: creds,
+        onStatus: async (statusStr) => { await ref.update({ status: statusStr, updatedAt: Date.now() }); },
+        onFrame: async (b64) => { await ref.update({ live_frame: b64 }); },
+        onAuthError: async (b64Image) => {
+          await db.ref('state/mfa_screenshot').set(b64Image);
+          await db.ref('state/login_status').set('WAITING_FOR_MFA');
+        }
+      });
+
+      if (!result || !result.outputPath) {
+        throw new Error('Recording ended before output file was created.');
       }
-    });
+      targetVideoPath = result.outputPath;
 
-    if (!result || !result.outputPath) {
-      throw new Error('Recording ended before output file was created.');
-    }
-
-    try {
-      if (fs.existsSync('intro.mp4')) {
-        console.log('[INFO] Normalizing intro.mp4 for concatenation...');
-        const { execSync } = require('child_process');
-        execSync('ffmpeg -y -i intro.mp4 -vf "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,fps=15" -c:v libx264 -preset ultrafast -crf 23 -pix_fmt yuv420p -c:a aac -b:a 128k -ar 44100 -ac 2 -movflags +faststart normalized_intro.mp4', {stdio: 'inherit'});
-        
-        if (fs.existsSync('normalized_intro.mp4') && fs.existsSync(result.outputPath)) {
-          console.log('[INFO] Concatenating videos using extremely fast stream copy...');
-          fs.writeFileSync('concat_list.txt', `file 'normalized_intro.mp4'\nfile '${result.outputPath}'\nfile 'normalized_intro.mp4'\n`);
-          const finalPath = result.outputPath.replace('.mp4', '_final.mp4');
-          execSync(`ffmpeg -y -f concat -safe 0 -i concat_list.txt -c copy "${finalPath}"`, {stdio: 'inherit'});
-          if (fs.existsSync(finalPath) && fs.statSync(finalPath).size > 1024) {
-             fs.renameSync(finalPath, result.outputPath);
-             console.log('[INFO] Successfully attached intro and outro to the class recording!');
+      try {
+        if (fs.existsSync('intro.mp4')) {
+          console.log('[INFO] Normalizing intro.mp4 for concatenation...');
+          const { execSync } = require('child_process');
+          execSync('ffmpeg -y -i intro.mp4 -vf "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,fps=15" -c:v libx264 -preset ultrafast -crf 23 -pix_fmt yuv420p -c:a aac -b:a 128k -ar 44100 -ac 2 -movflags +faststart normalized_intro.mp4', {stdio: 'inherit'});
+          
+          if (fs.existsSync('normalized_intro.mp4') && fs.existsSync(targetVideoPath)) {
+            console.log('[INFO] Concatenating videos using extremely fast stream copy...');
+            fs.writeFileSync('concat_list.txt', `file 'normalized_intro.mp4'\nfile '${targetVideoPath}'\nfile 'normalized_intro.mp4'\n`);
+            const finalPath = targetVideoPath.replace('.mp4', '_final.mp4');
+            execSync(`ffmpeg -y -f concat -safe 0 -i concat_list.txt -c copy "${finalPath}"`, {stdio: 'inherit'});
+            if (fs.existsSync(finalPath) && fs.statSync(finalPath).size > 1024) {
+               fs.renameSync(finalPath, targetVideoPath);
+               console.log('[INFO] Successfully attached intro and outro to the class recording!');
+            }
           }
         }
+      } catch (err) {
+        console.error('[ERROR] Failed to concatenate intro/outro:', err);
       }
-    } catch (err) {
-      console.error('[ERROR] Failed to concatenate intro/outro:', err);
     }
 
-
     await ref.update({ status: 'UPLOADING', live_frame: null, upload_progress: 0, updatedAt: Date.now() });
-    const youtubeUrl = await uploadToYouTube(result.outputPath, item.subject || item.title || safeName, async (pct) => {
+    const youtubeUrl = await uploadToYouTube(targetVideoPath, item.subject || item.title || safeName, async (pct) => {
         await ref.update({ upload_progress: pct, updatedAt: Date.now() });
     });
 
