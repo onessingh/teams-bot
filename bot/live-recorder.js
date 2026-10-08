@@ -781,6 +781,10 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     let maxParticipants = 0;
           const recentCounts = [];
     
+    const teacherScores = {};
+    let lockedTeacher = null;
+    let teacherMissingCount = 0;
+    
     while (Date.now() - startTime < recordMs) {
       await sleep(15000); // Check every 15 seconds
       try {
@@ -799,6 +803,81 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
           await page.mouse.move(0, 800, { steps: 10 });
         } catch (e) {}
       }
+
+      // Teacher Scoring & Smart Departure Detection
+      try {
+        const participantSignals = await page.evaluate(() => {
+          const signals = {};
+          
+          // 1. Check Screen Share Presenter
+          const screenShareStage = document.querySelector('[data-tid="screen-share"], [data-tid="presentation-stage"], [data-tid*="sharing"]');
+          if (screenShareStage) {
+            const presenterNameEl = screenShareStage.querySelector('span, div');
+            if (presenterNameEl) {
+              const name = (presenterNameEl.textContent || '').trim();
+              if (name && name.length > 2) {
+                signals[name] = (signals[name] || 0) + 3; // Screen share = 3 pts
+              }
+            }
+          }
+
+          // 2. Check Video Gallery / Tiles (Active mic / speaker / camera)
+          const tiles = document.querySelectorAll('[data-tid="video-tile"], [data-cid="video-tile"], [class*="video-tile"], [class*="participant"]');
+          tiles.forEach(tile => {
+            const nameEl = tile.querySelector('span[data-tid="author"], span[class*="name"], div[class*="participant-name"], [data-tid="participant-name"]');
+            if (nameEl) {
+              const name = (nameEl.textContent || '').trim();
+              if (name && name.length > 2) {
+                let pts = 1; // Presence = 1 pt
+                const html = tile.outerHTML || '';
+                if (html.includes('speaking') || html.includes('unmute') || tile.querySelector('[class*="speaking"]')) {
+                  pts += 2; // Active speaking = +2 pts
+                }
+                if (tile.querySelector('video')) {
+                  pts += 1; // Active camera = +1 pt
+                }
+                signals[name] = (signals[name] || 0) + pts;
+              }
+            }
+          });
+
+          return signals;
+        });
+
+        // Accumulate scores
+        for (const [name, score] of Object.entries(participantSignals)) {
+          teacherScores[name] = (teacherScores[name] || 0) + score;
+        }
+
+        // Lock Top Teacher candidate after 3 minutes
+        if (loopCount >= 12) {
+          let topTeacher = null;
+          let maxScore = 0;
+          for (const [name, score] of Object.entries(teacherScores)) {
+            if (score > maxScore) {
+              maxScore = score;
+              topTeacher = name;
+            }
+          }
+          if (topTeacher && maxScore >= 12) {
+            if (lockedTeacher !== topTeacher) {
+              lockedTeacher = topTeacher;
+              console.log(`🎓 Locked Teacher Identified: "${lockedTeacher}" (Score: ${maxScore})`);
+            }
+            // Check if locked teacher has disappeared from stage/signals
+            if (!participantSignals[lockedTeacher]) {
+              teacherMissingCount++;
+              console.log(`⚠️ Teacher "${lockedTeacher}" missing from stage/roster (${teacherMissingCount}/8 checks)...`);
+              if (teacherMissingCount >= 8) { // 2 mins missing
+                console.log(`🎓 Teacher "${lockedTeacher}" left the meeting. Ending class recording early!`);
+                break;
+              }
+            } else {
+              teacherMissingCount = 0;
+            }
+          }
+        }
+      } catch(te) {}
       
       // End meeting detection
       try {
