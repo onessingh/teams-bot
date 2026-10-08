@@ -142,9 +142,37 @@ async function findPipRect(page) {
       if (el.querySelectorAll('button').length < 3) continue;
       matches.push({ x: r.x, y: r.y, w: r.width, h: r.height, html: el.outerHTML.slice(0, 1500) });
     }
-    matches.sort((a, b) => a.w * a.h - b.w * b.h);
     return matches[0] || null;
   });
+}
+
+// Migration banner ("Same app, better security") ko close karta hai.
+// Return: banner abhi bhi bacha ho to uski height (px), warna 0.
+async function dismissMigrationBanner(page) {
+  const probe = () => page.evaluate(() => {
+    // Sabse chhota element jisme banner ka text ho
+    let best = null;
+    for (const el of document.querySelectorAll('div, section, header')) {
+      const t = (el.innerText || '').toLowerCase();
+      if (!t.includes('better security') && !t.includes('teams.cloud.microsoft')) continue;
+      const r = el.getBoundingClientRect();
+      if (r.height < 10 || r.height > 80 || r.width < 300) continue;
+      if (!best || r.height * r.width < best.h * best.w) best = { el, h: r.height, w: r.width };
+    }
+    if (!best) return { found: false, height: 0 };
+    // Close (X) button banner ke andar
+    const btn = Array.from(best.el.querySelectorAll('button, [role="button"]')).pop();
+    if (btn) btn.click();
+    return { found: true, height: Math.round(best.h) };
+  });
+
+  for (let i = 0; i < 3; i++) {
+    const res = await probe();
+    if (!res.found) return 0;            // banner nahi hai ya close ho gaya
+    await page.waitForTimeout(1200);
+  }
+  const last = await probe();
+  return last.found ? last.height : 0;   // abhi bhi hai -> offset return
 }
 
 async function recordLiveClass(url, outputPath, cookies, options = {}) {
@@ -840,12 +868,18 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
       console.log('[DEBUG-DUMP] ROSTER:', html);
     } catch(re) {}
 
+    const bannerOffset = await dismissMigrationBanner(page);
+    console.log('[DEBUG] Banner offset (px):', bannerOffset);
+
     // Start FFmpeg
     if (options.onStatus) await options.onStatus('RECORDING');
     console.log('🎥 Starting FFmpeg recording for live class...');
     const recordMs = maxMs;
-    const cropF = isNativeFullScreen ? 'crop=1280:640:0:145,scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2' : 'crop=1204:604:76:200,scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2';
-      ffmpeg = await startRecorder(outputPath, Math.floor(recordMs / 1000), cropF);
+    const off = bannerOffset;   // 0 for normal ID, ~25-30 for college ID agar banner close na hua
+    const cropF = isNativeFullScreen
+      ? `crop=1280:${640 - off}:0:${145 + off},scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2`
+      : `crop=1204:${604 - off}:76:${200 + off},scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2`;
+    ffmpeg = await startRecorder(outputPath, Math.floor(recordMs / 1000), cropF);
 
     const startTime = Date.now();
     let loopCount = 0;
