@@ -849,8 +849,8 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
           teacherScores[name] = (teacherScores[name] || 0) + score;
         }
 
-        // Lock Top Teacher candidate after 3 minutes
-        if (loopCount >= 12) {
+        // Allow score accumulation for late-joining teachers (lock after 30 mins or strong 25+ pts score)
+        if (loopCount >= 120 || Object.values(teacherScores).some(s => s >= 25)) {
           let topTeacher = null;
           let maxScore = 0;
           for (const [name, score] of Object.entries(teacherScores)) {
@@ -859,17 +859,17 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
               topTeacher = name;
             }
           }
-          if (topTeacher && maxScore >= 12) {
+          if (topTeacher && maxScore >= 25) {
             if (lockedTeacher !== topTeacher) {
               lockedTeacher = topTeacher;
               console.log(`🎓 Locked Teacher Identified: "${lockedTeacher}" (Score: ${maxScore})`);
             }
-            // Check if locked teacher has disappeared from stage/signals
+            // Check if locked teacher has disappeared from stage/signals (5 mins grace period = 20 checks)
             if (!participantSignals[lockedTeacher]) {
               teacherMissingCount++;
-              console.log(`⚠️ Teacher "${lockedTeacher}" missing from stage/roster (${teacherMissingCount}/8 checks)...`);
-              if (teacherMissingCount >= 8) { // 2 mins missing
-                console.log(`🎓 Teacher "${lockedTeacher}" left the meeting. Ending class recording early!`);
+              console.log(`⚠️ Teacher "${lockedTeacher}" missing from stage/roster (${teacherMissingCount}/20 checks)...`);
+              if (teacherMissingCount >= 20) { // 5 mins grace period
+                console.log(`🎓 Teacher "${lockedTeacher}" left the meeting for >5 mins. Ending class recording early!`);
                 break;
               }
             } else {
