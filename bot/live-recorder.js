@@ -709,56 +709,39 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             style.id = 'bot-hider-style';
             style.innerHTML = `
     * { cursor: none !important; }
-    header,
-    #teams-app-header,
-    [data-tid="app-header"],
-    div[class*="app-header"],
-    div[class*="header-bar"],
-    div[class*="top-bar"],
-    div[class*="calling-header"],
-    div[data-tid="calling-status-bar"],
-    div[role="alert"], 
-    div[role="banner"],
-    div[data-tid^="toast"], 
-    div[data-tid^="banner"], 
-    .ui-toast, 
-    .toast-container, 
-    .ts-toast-stack,
+    
+    /* Explicitly protect video stage and canvas from ever being hidden */
+    video,
+    canvas,
+    [data-tid="calling-roster-stage"],
+    [data-tid="video-gallery"],
+    [data-tid="meeting-canvas"],
+    [data-tid="screen-sharing-canvas"],
+    div[class*="calling-stage"],
+    div[class*="video-gallery"] {
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+    }
+
+    /* Hide specific overlays, tooltips, toasts, and controls */
     [role="tooltip"],
     .fui-Tooltip,
     .ui-tooltip,
+    div[data-tid^="toast"],
+    div[data-tid^="banner"],
+    [data-tid*="notification-banner"],
+    [data-tid*="recording-notification"],
+    .ts-toast-notification,
+    .ui-toast,
+    .toast-container,
+    .ts-toast-stack,
     div[aria-label*="notification" i],
-    div[aria-live="polite"],
-    [data-tid*="lobby"],
     div[class*="lobby-notification"],
     div[class*="LobbyNotification"],
     div[class*="lobby-admission"],
-    div[class*="LobbyAdmission"],
-    div[aria-label*="lobby" i],
-    #roster-button,
-    #view-button,
-    #chat-button,
-    #hangup-button,
-    #mic-button,
-    #camera-button,
-    #share-button,
-    #raise-hand-button,
-    [data-tid="roster-button"],
-    [data-tid="view-button"],
-    [data-tid="hangup-button"],
-    [data-tid="meeting-toolbar"],
-    [data-tid="calling-control-bar"],
-    [data-tid="call-controls"],
-    [data-tid*="control-bar"],
-    [data-tid*="toolbar"],
-    [role="toolbar"],
-    div[role="toolbar"],
-    .fui-Toolbar,
-    div[class*="calling-control-bar"],
-    div[class*="meeting-toolbar"],
-    div[class*="ControlBar"],
-    div[aria-label*="meeting controls" i],
-    div[aria-label*="call controls" i] {
+    div[class*="LobbyAdmission"] {
         display: none !important;
         opacity: 0 !important;
         visibility: hidden !important;
@@ -766,23 +749,6 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         max-height: 0 !important;
         overflow: hidden !important;
         pointer-events: none !important;
-        z-index: -99999 !important;
-    }
-
-    [data-tid="calling-roster-stage"],
-    [data-tid="video-gallery"],
-    [data-tid="meeting-canvas"],
-    [data-tid="screen-sharing-canvas"],
-    div[class*="calling-stage"],
-    div[class*="video-gallery"] {
-        top: 0 !important;
-        left: 0 !important;
-        width: 100vw !important;
-        height: 100vh !important;
-        max-width: 100vw !important;
-        max-height: 100vh !important;
-        margin: 0 !important;
-        padding: 0 !important;
     }
 `;
             if (!document.getElementById('bot-hider-style')) {
@@ -794,121 +760,39 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                     // Remove all title attributes to stop hover tooltips
                     document.querySelectorAll('[title]').forEach(el => el.removeAttribute('title'));
 
-                    // Aggressively dismiss toasts/popups
+                    // Safely click dismiss on popups
                     const btns = document.querySelectorAll('button');
                     btns.forEach(btn => {
                         const t = (btn.textContent || '').trim().toLowerCase();
                         if (t === 'dismiss' || t === 'got it' || t === 'not now') {
-                            btn.click();
+                            try { btn.click(); } catch(e){}
                         }
                     });
 
-                    // 1. DISMISS & HIDE Security / Migration Banner ("teams.cloud.microsoft. Same app, better security. Learn more")
-                    document.querySelectorAll('*').forEach(el => {
-                        const text = (el.textContent || '').toLowerCase();
-                        if (text.includes('same app, better security') || text.includes('teams.cloud.microsoft') || text.includes('better security')) {
-                            // Try clicking close/X button if present
-                            const closeBtn = el.querySelector('button, [role="button"], svg, [aria-label*="Close" i], [aria-label*="Dismiss" i]');
-                            if (closeBtn) {
-                                try { closeBtn.click(); } catch(e){}
-                            }
-                            let container = el;
-                            for (let i = 0; i < 6; i++) {
-                                if (container && container.tagName !== 'BODY') {
-                                    container.style.setProperty('display', 'none', 'important');
-                                    container.style.setProperty('opacity', '0', 'important');
-                                    container.style.setProperty('visibility', 'hidden', 'important');
-                                    container.style.setProperty('height', '0px', 'important');
-                                    container.style.setProperty('margin', '0px', 'important');
-                                    container.style.setProperty('padding', '0px', 'important');
-                                    container.style.setProperty('pointer-events', 'none', 'important');
-                                    container = container.parentElement;
-                                }
-                            }
-                        }
-                    });
+                    // Helper to check if an element or any ancestor contains video/canvas
+                    const isVideoContainer = (el) => {
+                        if (!el) return false;
+                        if (el.matches && el.matches('video, canvas, [data-tid="video-gallery"], [data-tid="calling-roster-stage"], [data-tid="meeting-canvas"], [data-tid="screen-sharing-canvas"], div[class*="calling-stage"], div[class*="video-gallery"]')) return true;
+                        if (el.querySelector && el.querySelector('video, canvas, [data-tid="video-gallery"], [data-tid="calling-roster-stage"], [data-tid="meeting-canvas"]')) return true;
+                        return false;
+                    };
 
-                    // 2. UNCONDITIONAL HIDE for Lobby Notifications ("Waiting in the lobby", "Deny", "Admit")
-                    document.querySelectorAll('*').forEach(el => {
-                        const text = (el.textContent || '').toLowerCase();
-                        if (text.includes('waiting in the lobby') || (text.includes('deny') && text.includes('admit'))) {
-                            let container = el;
-                            for (let i = 0; i < 8; i++) {
-                                if (container && container.tagName !== 'BODY') {
-                                    container.style.setProperty('display', 'none', 'important');
-                                    container.style.setProperty('opacity', '0', 'important');
-                                    container.style.setProperty('visibility', 'hidden', 'important');
-                                    container.style.setProperty('pointer-events', 'none', 'important');
-                                    container.style.setProperty('z-index', '-99999', 'important');
-                                    container = container.parentElement;
-                                }
-                            }
-                        }
+                    // Dismiss/hide security banner card only (never parent container)
+                    const banner = Array.from(document.querySelectorAll('div, section, header')).find(el => {
+                        const text = (el.innerText || el.textContent || '').toLowerCase();
+                        return (text.includes('same app, better security') || text.includes('teams.cloud.microsoft')) && !isVideoContainer(el);
                     });
-
-                    // Hide Top Header & App Bar
-                    const searchInput = document.querySelector('input[placeholder*="Ctrl+Alt"], input[placeholder*="Search"], input[id*="search"]');
-                    if (searchInput) {
-                        let parent = searchInput.parentElement;
-                        for(let i = 0; i < 15; i++) {
-                            if (parent && parent.tagName !== 'BODY') {
-                                const r = parent.getBoundingClientRect();
-                                if (r.height < 150 && r.width > window.innerWidth * 0.4 && r.top <= 80) {
-                                    parent.style.setProperty('display', 'none', 'important');
-                                    break;
-                                }
-                                parent = parent.parentElement;
-                            }
-                        }
+                    if (banner) {
+                        const closeBtn = banner.querySelector('button, [role="button"], svg, [aria-label*="Close" i], [aria-label*="Dismiss" i]');
+                        if (closeBtn) { try { closeBtn.click(); } catch(e){} }
+                        banner.style.setProperty('display', 'none', 'important');
                     }
 
-                    // Hide Left App Bar
-                    const activityBtn = document.querySelector('button[aria-label="Activity"], button[name="Activity"], button[aria-label="Chat"]');
-                    if (activityBtn) {
-                        let parent = activityBtn.parentElement;
-                        for(let i = 0; i < 15; i++) {
-                            if (parent && parent.tagName !== 'BODY') {
-                                const r = parent.getBoundingClientRect();
-                                if (r.width < 120 && r.height > window.innerHeight * 0.4 && r.left <= 0) {
-                                    parent.style.setProperty('display', 'none', 'important');
-                                    break;
-                                }
-                                parent = parent.parentElement;
-                            }
-                        }
-                    }
-
-                    // Hide Top Toolbar / Controls / Timer anywhere in top 300px (y < 300)
-                    document.querySelectorAll('*').forEach(el => {
-                        if (el.tagName === 'BODY' || el.tagName === 'HTML' || el.tagName === 'STYLE' || el.tagName === 'SCRIPT') return;
-                        const r = el.getBoundingClientRect();
-                        if (r.top >= -50 && r.top < 300 && r.height > 15 && r.height < 300 && r.width > window.innerWidth * 0.2) {
-                            const text = ((el.textContent || '') + ' ' + (el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('data-tid') || '')).toLowerCase();
-                            if (text.includes('chat') || text.includes('people') || text.includes('view') || text.includes('leave') || text.includes('mic') || text.includes('camera') || text.includes('share') || text.includes('roster') || text.includes('react') || /\b\d{1,2}:\d{2}\b/.test(text)) {
-                                el.style.setProperty('display', 'none', 'important');
-                                el.style.setProperty('opacity', '0', 'important');
-                                el.style.setProperty('visibility', 'hidden', 'important');
-                                el.style.setProperty('pointer-events', 'none', 'important');
-                            }
-                        }
-                    });
-
-                    // Hide Meeting Controls & Toolbar
-                    const controlBtns = document.querySelectorAll('button[aria-label*="People" i], button[aria-label*="Raise" i], button[aria-label*="View" i], button[aria-label*="React" i], button[aria-label*="Chat" i], button[data-tid*="toolbar"], [role="toolbar"] button');
-                    controlBtns.forEach(btn => {
-                        let toolbar = btn.parentElement;
-                        for (let i = 0; i < 12; i++) {
-                            if (toolbar && toolbar.tagName !== 'BODY') {
-                                const r = toolbar.getBoundingClientRect();
-                                if (r.width > 150 && r.height < 250 && r.top < 320) {
-                                    toolbar.style.setProperty('display', 'none', 'important');
-                                    toolbar.style.setProperty('opacity', '0', 'important');
-                                    toolbar.style.setProperty('visibility', 'hidden', 'important');
-                                    toolbar.style.setProperty('pointer-events', 'none', 'important');
-                                    break;
-                                }
-                                toolbar = toolbar.parentElement;
-                            }
+                    // Hide Lobby toast cards safely (never parent container)
+                    document.querySelectorAll('[role="alert"], [data-tid*="notification"]').forEach(el => {
+                        const text = (el.innerText || el.textContent || '').toLowerCase();
+                        if ((text.includes('waiting in the lobby') || text.includes('recording has started')) && !isVideoContainer(el)) {
+                            el.style.setProperty('display', 'none', 'important');
                         }
                     });
 
