@@ -32,8 +32,8 @@ admin.initializeApp({
 const db = admin.database();
 const REPO = process.env.GITHUB_REPOSITORY || 'onessingh/teams-bot';
 const GH_TOKEN = process.env.GH_SCHEDULER_TOKEN;
-const TRIGGER_WINDOW_MS = 20 * 60 * 1000; // 20 minutes before class
-const LATE_WINDOW_MS = 5 * 60 * 1000;     // 5 minutes after class start (still trigger)
+const TRIGGER_WINDOW_MS = 25 * 60 * 1000; // 25 minutes before class
+const LATE_WINDOW_MS = 35 * 60 * 1000;    // 35 minutes after class start (half an hour+ late)
 
 async function checkAndTrigger() {
   console.log('[Scheduler] Checking Firebase live_queue...');
