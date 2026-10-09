@@ -996,19 +996,24 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
 
       // Teacher Scoring & Smart Departure Detection
       try {
-        const participantSignals = await page.evaluate(() => {
+        const participantData = await page.evaluate(() => {
           const signals = {};
-          
+          let isSharing = false;
+
           // 1. Check Screen Share Presenter
-          const screenShareStage = document.querySelector('[data-tid="screen-share"], [data-tid="presentation-stage"], [data-tid*="sharing"]');
+          const screenShareStage = document.querySelector('[data-tid="screen-share"], [data-tid="presentation-stage"], [data-tid*="sharing"], [class*="screen-share"]');
           if (screenShareStage) {
+            isSharing = true;
             const presenterNameEl = screenShareStage.querySelector('span, div');
             if (presenterNameEl) {
               const name = (presenterNameEl.textContent || '').trim();
-              if (name && name.length > 2) {
-                signals[name] = (signals[name] || 0) + 3; // Screen share = 3 pts
+              if (name && name.length > 2 && !name.includes('In this meeting')) {
+                signals[name] = (signals[name] || 0) + 5; // Screen share = 5 pts
               }
             }
+          }
+          if (document.querySelector('video')) {
+            isSharing = true;
           }
 
           // 2. Check Video Gallery / Tiles (Active mic / speaker / camera)
@@ -1017,30 +1022,42 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             const nameEl = tile.querySelector('span[data-tid="author"], span[class*="name"], div[class*="participant-name"], [data-tid="participant-name"]');
             if (nameEl) {
               const name = (nameEl.textContent || '').trim();
-              if (name && name.length > 2) {
-                let pts = 1; // Presence = 1 pt
-                const html = tile.outerHTML || '';
+              if (name && name.length > 2 && !name.includes('In this meeting')) {
+                let pts = 1;
+                const html = (tile.outerHTML || '').toLowerCase();
                 if (html.includes('speaking') || html.includes('unmute') || tile.querySelector('[class*="speaking"]')) {
-                  pts += 2; // Active speaking = +2 pts
+                  pts += 3; // Active speaking = +3 pts
                 }
                 if (tile.querySelector('video')) {
-                  pts += 1; // Active camera = +1 pt
+                  pts += 2; // Active camera = +2 pts
                 }
                 signals[name] = (signals[name] || 0) + pts;
               }
             }
           });
 
-          return signals;
+          // 3. Check Roster / Participant List
+          const rosterNames = document.querySelectorAll('[data-tid="participant-name"], [data-tid="author"], [class*="participantName"], [class*="displayName"]');
+          rosterNames.forEach(el => {
+            const name = (el.textContent || '').trim();
+            if (name && name.length > 2 && !name.includes('In this meeting') && !name.includes('Attendees')) {
+              signals[name] = (signals[name] || 0) + 1;
+            }
+          });
+
+          return { signals, isSharing };
         });
 
+        const signals = participantData.signals || {};
+        const isSharing = participantData.isSharing;
+
         // Accumulate scores
-        for (const [name, score] of Object.entries(participantSignals)) {
+        for (const [name, score] of Object.entries(signals)) {
           teacherScores[name] = (teacherScores[name] || 0) + score;
         }
 
-        // Allow score accumulation for late-joining teachers (lock after 30 mins or strong 25+ pts score)
-        if (loopCount >= 120 || Object.values(teacherScores).some(s => s >= 25)) {
+        // Lock teacher fast once score reaches 10+ pts or loopCount >= 8 (2 mins into class)
+        if (loopCount >= 8 || Object.values(teacherScores).some(s => s >= 10)) {
           let topTeacher = null;
           let maxScore = 0;
           for (const [name, score] of Object.entries(teacherScores)) {
@@ -1049,21 +1066,34 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
               topTeacher = name;
             }
           }
-          if (topTeacher && maxScore >= 25) {
+
+          if (topTeacher && maxScore >= 10) {
             if (lockedTeacher !== topTeacher) {
               lockedTeacher = topTeacher;
               console.log(`🎓 Locked Teacher Identified: "${lockedTeacher}" (Score: ${maxScore})`);
             }
-            // Check if locked teacher has disappeared from stage/signals (5 mins grace period = 20 checks)
-            if (!participantSignals[lockedTeacher]) {
+
+            // Check if locked teacher is missing from stage & roster (8 checks = 2 mins grace period)
+            if (!signals[lockedTeacher]) {
               teacherMissingCount++;
-              console.log(`⚠️ Teacher "${lockedTeacher}" missing from stage/roster (${teacherMissingCount}/20 checks)...`);
-              if (teacherMissingCount >= 20) { // 5 mins grace period
-                console.log(`🎓 Teacher "${lockedTeacher}" left the meeting for >5 mins. Ending class recording early!`);
+              console.log(`⚠️ Teacher "${lockedTeacher}" missing from meeting/roster (${teacherMissingCount}/8 checks)...`);
+              if (teacherMissingCount >= 8) {
+                console.log(`🎓 Teacher "${lockedTeacher}" has left the meeting for >2 mins. Stopping recording early!`);
                 break;
               }
             } else {
               teacherMissingCount = 0;
+            }
+
+            // Check for silent meeting (no screen share & no teacher presentation for 3 mins)
+            if (!isSharing && loopCount > 20) {
+              noActivityCount++;
+              if (noActivityCount >= 12) { // 3 mins without screen share / active presentation
+                console.log(`🎓 Screen share & presentation inactive for >3 mins after class. Stopping recording early!`);
+                break;
+              }
+            } else {
+              noActivityCount = 0;
             }
           }
         }
