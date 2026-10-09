@@ -110,10 +110,22 @@ async function doTeamsLogin(db) {
             console.log("No MFA prompt or it auto-progressed.");
         }
 
-        // 'Stay signed in?' prompt
+        // 'Stay signed in?' prompt - CLICK YES TO GET PERSISTENT REFRESH COOKIES!
         try {
-            await page.waitForSelector('input[id="idBtn_Back"]', { timeout: 5000 });
-            await page.click('input[id="idBtn_Back"]'); // click "No"
+            console.log("Checking for 'Stay signed in?' prompt...");
+            const staySignedBtn = page.locator('#idSIButton9, input[value="Yes"], input[type="submit"][value="Yes"]').first();
+            if (await staySignedBtn.isVisible({ timeout: 5000 })) {
+                console.log("Clicking 'Yes' on Stay signed in prompt to get persistent auth cookies...");
+                await staySignedBtn.click({ force: true });
+                await page.waitForTimeout(4000);
+            }
+        } catch(e) {}
+
+        // Wait for Teams web app to finish initializing on teams.cloud.microsoft / v2
+        console.log("Waiting for Teams Web app to finish loading...");
+        try {
+            await page.waitForURL(url => url.href.includes('teams.cloud.microsoft') || url.href.includes('/v2/') || url.href.includes('teams.microsoft.com'), { timeout: 15000 });
+            await page.waitForTimeout(5000);
         } catch(e) {}
 
         console.log("Validating successful login...");

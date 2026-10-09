@@ -293,7 +293,24 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     });
 
     if (Array.isArray(cookies) && cookies.length) {
-      await context.addCookies(cookies);
+      const expandedCookies = [];
+      for (const c of cookies) {
+        expandedCookies.push(c);
+        if (c.domain && (c.domain.includes('teams.microsoft.com') || c.domain.includes('office.com'))) {
+          const cloudCookie = { ...c };
+          if (c.domain.startsWith('.')) {
+            cloudCookie.domain = '.teams.cloud.microsoft';
+          } else {
+            cloudCookie.domain = 'teams.cloud.microsoft';
+          }
+          expandedCookies.push(cloudCookie);
+        }
+      }
+      try {
+        await context.addCookies(expandedCookies);
+      } catch(ce) {
+        await context.addCookies(cookies);
+      }
     }
 
     const page = await context.newPage();
