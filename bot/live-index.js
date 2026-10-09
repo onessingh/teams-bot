@@ -149,29 +149,41 @@ async function processItem(item) {
   let skipRecording = false;
   let result = null;
 
-  // Check if this is a retry and we can download existing recorded artifact from previous run
-  if (item.run_url) {
+  function findMp4Files(dir) {
+    let results = [];
+    if (!fs.existsSync(dir)) return results;
+    const list = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of list) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        results = results.concat(findMp4Files(full));
+      } else if (entry.isFile() && entry.name.endsWith('.mp4') && fs.statSync(full).size > 1024) {
+        results.push(full);
+      }
+    }
+    return results;
+  }
+
+  // 1. Check local disk for existing video backup from previous attempt
+  const localBackups = findMp4Files(OUTPUT_DIR).concat(findMp4Files('.'));
+  if (localBackups.length > 0) {
+    targetVideoPath = localBackups[0];
+    console.log(`[RETRY] Found local video backup: ${targetVideoPath}`);
+    skipRecording = true;
+  }
+
+  // 2. Check GitHub Run artifact if run_url exists
+  if (!skipRecording && item.run_url) {
     const runMatch = item.run_url.match(/runs\/(\d+)/);
     if (runMatch && runMatch[1]) {
       const runId = runMatch[1];
       console.log(`[RETRY] Attempting to download saved video artifact from GitHub Run ID: ${runId}...`);
       try {
         const { execSync } = require('child_process');
-        execSync(`gh run download ${runId} -n recorded-video --dir "${OUTPUT_DIR}"`, { stdio: 'inherit' });
-        
-        function findMp4Files(dir) {
-          let results = [];
-          if (!fs.existsSync(dir)) return results;
-          const list = fs.readdirSync(dir, { withFileTypes: true });
-          for (const entry of list) {
-            const full = path.join(dir, entry.name);
-            if (entry.isDirectory()) {
-              results = results.concat(findMp4Files(full));
-            } else if (entry.isFile() && entry.name.endsWith('.mp4') && fs.statSync(full).size > 1024) {
-              results.push(full);
-            }
-          }
-          return results;
+        try {
+          execSync(`gh run download ${runId} -n recorded-video --dir "${OUTPUT_DIR}"`, { stdio: 'inherit' });
+        } catch(e1) {
+          execSync(`gh run download ${runId} --dir "${OUTPUT_DIR}"`, { stdio: 'inherit' });
         }
 
         const downloadedFiles = findMp4Files(OUTPUT_DIR);
