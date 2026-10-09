@@ -781,7 +781,23 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         pointer-events: auto !important;
     }
 
-    /* Hide specific overlays, tooltips, toasts, and controls */
+    /* Hide top meeting controls toolbar, app headers, and call timer */
+    #teams-app-header,
+    header,
+    [data-tid="app-header"],
+    [data-tid="meeting-toolbar"],
+    [data-tid="calling-control-bar"],
+    [data-tid="call-controls"],
+    [data-tid="calling-status-bar"],
+    [data-tid="meeting-time"],
+    [data-tid*="timer"],
+    [role="toolbar"],
+    div[class*="calling-header"],
+    div[class*="control-bar"],
+    div[class*="meeting-toolbar"],
+    div[class*="meeting-time"],
+    div[class*="call-timer"],
+    .fui-Toolbar,
     [role="tooltip"],
     .fui-Tooltip,
     .ui-tooltip,
@@ -832,6 +848,16 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                         if (el.querySelector && el.querySelector('video, canvas, [data-tid="video-gallery"], [data-tid="calling-roster-stage"], [data-tid="meeting-canvas"]')) return true;
                         return false;
                     };
+
+                    // Safely hide top meeting controls toolbar & call timer (never parent container of video/canvas)
+                    const topControls = document.querySelectorAll('[role="toolbar"], [data-tid*="toolbar"], [data-tid="meeting-toolbar"], [data-tid="calling-control-bar"], [data-tid="calling-status-bar"], header, div[class*="calling-header"]');
+                    topControls.forEach(ctrl => {
+                        if (!isVideoContainer(ctrl)) {
+                            ctrl.style.setProperty('display', 'none', 'important');
+                            ctrl.style.setProperty('opacity', '0', 'important');
+                            ctrl.style.setProperty('visibility', 'hidden', 'important');
+                        }
+                    });
 
                     // Dismiss/hide security banner card only (never parent container)
                     const banner = Array.from(document.querySelectorAll('div, section, header')).find(el => {
