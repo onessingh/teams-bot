@@ -458,6 +458,7 @@ onValue(ref(db, 'live_queue'), (snapshot) => {
           if (item.status === 'WAITING_IN_LOBBY') { statusColor = "bg-orange-100 text-orange-700 animate-pulse"; friendlyStatus = "WAITING IN LOBBY"; }
           if (item.status === 'ADMITTED_PREPARING_UI') { statusColor = "bg-indigo-100 text-indigo-700"; friendlyStatus = "ADMITTED - PREPARING UI"; }
           if (item.status === 'RECORDING') statusColor = "bg-red-100 text-red-700 animate-pulse";
+          if (item.status === 'WAITING_FOR_UPLOAD_SLOT') { statusColor = "bg-amber-100 text-amber-700 animate-pulse"; friendlyStatus = "WAITING FOR UPLOAD SLOT"; }
           if (item.status === 'UPLOADING') { statusColor = "bg-pink-100 text-pink-700 animate-pulse"; friendlyStatus = "UPLOADING TO YOUTUBE " + (item.upload_progress || 0) + "%"; }
           if (item.status === 'COMPLETED') statusColor = "bg-green-100 text-green-700";
           if (item.status === 'FAILED' || item.status === 'TEAMS_LOGIN_REQUIRED') statusColor = "bg-red-100 text-red-700";

@@ -28,6 +28,42 @@ let workerRunning = false;
 fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 console.log('🤖 Bot is online and listening to Firebase...');
 
+async function acquireUploadLock(db, workerId, timeoutMs = 7200000) {
+  const lockRef = db.ref('state/upload_lock');
+  console.log(`[UPLOAD LOCK] ${workerId} waiting for YouTube upload slot...`);
+  const startTime = Date.now();
+  while (Date.now() - startTime < timeoutMs) {
+    const tx = await lockRef.transaction((current) => {
+      const now = Date.now();
+      if (!current || !current.locked || (now - (current.lockedAt || 0) > 45 * 60 * 1000)) {
+        return { locked: true, lockedBy: workerId, lockedAt: now };
+      }
+      return;
+    });
+    if (tx.committed && tx.snapshot.exists() && tx.snapshot.val() && tx.snapshot.val().lockedBy === workerId) {
+      console.log(`[UPLOAD LOCK] ${workerId} acquired YouTube upload slot successfully!`);
+      return true;
+    }
+    await new Promise(r => setTimeout(r, 10000));
+  }
+  throw new Error('Timed out waiting for YouTube upload slot.');
+}
+
+async function releaseUploadLock(db, workerId) {
+  const lockRef = db.ref('state/upload_lock');
+  try {
+    await lockRef.transaction((current) => {
+      if (current && current.lockedBy === workerId) {
+        return null;
+      }
+      return current;
+    });
+    console.log(`[UPLOAD LOCK] ${workerId} released YouTube upload slot.`);
+  } catch (err) {
+    console.error('[UPLOAD LOCK] Error releasing lock:', err.message);
+  }
+}
+
 async function handleLoginRequest() {
   const statusSnap = await db.ref('state/login_status').once('value');
   const status = statusSnap.val();
@@ -183,10 +219,18 @@ async function processItem(item) {
       }
     }
 
-    await ref.update({ status: 'UPLOADING', live_frame: null, upload_progress: 0, updatedAt: Date.now() });
-    const youtubeUrl = await uploadToYouTube(targetVideoPath, item.subject || item.title || safeName, async (pct) => {
-        await ref.update({ upload_progress: pct, updatedAt: Date.now() });
-    });
+    await ref.update({ status: 'WAITING_FOR_UPLOAD_SLOT', live_frame: null, updatedAt: Date.now() });
+    const workerLockId = `live_${item.id}_${Date.now()}`;
+    let youtubeUrl = null;
+    try {
+      await acquireUploadLock(db, workerLockId);
+      await ref.update({ status: 'UPLOADING', live_frame: null, upload_progress: 0, updatedAt: Date.now() });
+      youtubeUrl = await uploadToYouTube(targetVideoPath, item.subject || item.title || safeName, async (pct) => {
+          await ref.update({ upload_progress: pct, updatedAt: Date.now() });
+      });
+    } finally {
+      await releaseUploadLock(db, workerLockId);
+    }
 
     await ref.update({
       status: 'COMPLETED',
