@@ -101,8 +101,11 @@ onValue(ref(db, 'queue'), (snapshot) => {
         queueItemsData.push(item);
         
         let linkHtml = '';
-        if (item.run_url) { linkHtml += `<a href="${item.run_url}" target="_blank" class="mt-2 inline-flex items-center text-xs font-bold text-gray-700 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-md transition-colors mr-2">?? Download Backup</a>`; }
-          if (item.youtube_url) {
+        if (item.run_url) { linkHtml += `<a href="${item.run_url}" target="_blank" class="mt-2 inline-flex items-center text-xs font-bold text-gray-700 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-md transition-colors mr-2">📦 Download Backup</a>`; }
+        if ((item.status === 'FAILED' || item.error) && !item.youtube_url) {
+            linkHtml += `<button onclick="retryVodUpload('${item.id}')" class="mt-2 inline-flex items-center text-xs font-bold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-md transition-colors mr-2 cursor-pointer">🔄 Retry YouTube Upload</button>`;
+        }
+        if (item.youtube_url) {
             linkHtml += `<a href="${item.youtube_url}" target="_blank" class="mt-2 inline-flex items-center text-xs font-bold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-md transition-colors">▶️ Watch on YouTube</a>`;
         }
         
@@ -853,6 +856,24 @@ window.retryLiveUpload = async function(id) {
         const token = localStorage.getItem('teams_gh_pat');
         if (token) {
             triggerLiveBotDispatch(token, 1);
+        }
+        alert('Retry requested! The bot will now download the recorded video backup and re-try YouTube upload.');
+    } catch(e) {
+        alert('Error requesting retry: ' + e.message);
+    }
+};
+
+window.retryVodUpload = async function(id) {
+    if (!confirm("Do you want to re-try YouTube upload for this class?")) return;
+    try {
+        await update(ref(db, `queue/${id}`), {
+            status: 'RETRY_REQUESTED',
+            error: null,
+            updatedAt: Date.now()
+        });
+        const token = localStorage.getItem('teams_gh_pat');
+        if (token) {
+            triggerGitHubAction(token);
         }
         alert('Retry requested! The bot will now download the recorded video backup and re-try YouTube upload.');
     } catch(e) {

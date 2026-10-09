@@ -85,24 +85,33 @@ async function handleLoginRequest() {
 
 async function claimNextWaiting() {
   const snap = await db.ref('queue').orderByChild('addedAt').once('value');
-  let selected = null;
+  const candidates = [];
   snap.forEach(child => {
     const item = child.val() || {};
-    if (!selected && item.status === 'WAITING' && item.url) {
-      selected = { id: child.key, ...item };
+    if ((item.status === 'WAITING' || item.status === 'RETRY_REQUESTED') && item.url) {
+      candidates.push({ id: child.key, ...item });
     }
   });
-  if (!selected) return null;
 
-  const itemRef = db.ref(`queue/${selected.id}`);
-  const currentSnap = await itemRef.once('value');
-  const current = currentSnap.val();
-  
-  if (current && current.status === 'WAITING') {
-    await itemRef.update({ status: 'STARTING', startedAt: Date.now(), error: null, run_url: process.env.GITHUB_REPOSITORY && process.env.GITHUB_RUN_ID ? 'https://github.com/' + process.env.GITHUB_REPOSITORY + '/actions/runs/' + process.env.GITHUB_RUN_ID : null });
-    return selected;
+  for (const selected of candidates) {
+    const itemRef = db.ref(`queue/${selected.id}`);
+    const txResult = await itemRef.transaction((current) => {
+      if (current === null) return current;
+      if (current.status === 'WAITING' || current.status === 'RETRY_REQUESTED') {
+        current.status = 'STARTING';
+        current.startedAt = Date.now();
+        current.error = null;
+        if (process.env.GITHUB_REPOSITORY && process.env.GITHUB_RUN_ID) {
+          current.run_url = 'https://github.com/' + process.env.GITHUB_REPOSITORY + '/actions/runs/' + process.env.GITHUB_RUN_ID;
+        }
+        return current;
+      }
+      return;
+    });
+    if (txResult.committed && txResult.snapshot.exists()) {
+      return { id: selected.id, ...txResult.snapshot.val() };
+    }
   }
-
   return null;
 }
 
@@ -131,9 +140,33 @@ async function processItem(item) {
     .replace(/[^a-z0-9._-]+/gi, '_')
     .slice(0, 80);
   const outputPath = path.join(OUTPUT_DIR, `${Date.now()}-${safeName}.mp4`);
+  let targetVideoPath = outputPath;
+  let skipRecording = false;
+  let result = null;
+
+  if (item.run_url) {
+    const runMatch = item.run_url.match(/runs\/(\d+)/);
+    if (runMatch && runMatch[1]) {
+      const runId = runMatch[1];
+      console.log(`[RETRY] Attempting to download saved video artifact from GitHub Run ID: ${runId}...`);
+      try {
+        const { execSync } = require('child_process');
+        execSync(`gh run download ${runId} -n recorded-video --dir "${OUTPUT_DIR}"`, { stdio: 'inherit' });
+        const downloadedFiles = fs.readdirSync(OUTPUT_DIR).filter(f => f.endsWith('.mp4'));
+        if (downloadedFiles.length > 0) {
+          targetVideoPath = path.join(OUTPUT_DIR, downloadedFiles[0]);
+          console.log(`[RETRY] Found downloaded video backup: ${targetVideoPath}`);
+          skipRecording = true;
+        }
+      } catch (err) {
+        console.log('[RETRY] Artifact download via gh CLI failed or unavailable:', err.message);
+      }
+    }
+  }
 
   try {
-    await ref.update({ status: 'OPENING_RECORDING', updatedAt: Date.now() });
+    if (!skipRecording) {
+      await ref.update({ status: 'OPENING_RECORDING', updatedAt: Date.now() });
     const cookies = await getCookies(item.accountId);
     const targetKey = item.accountId && item.accountId !== 'default' ? item.accountId : 'teams_creds';
     const credsSnap = await db.ref('config/' + targetKey).once('value');
@@ -174,6 +207,8 @@ async function processItem(item) {
     } catch (err) {
       console.error('[ERROR] Failed to concatenate intro/outro:', err);
     }
+    targetVideoPath = result ? result.outputPath : targetVideoPath;
+    }
 
     // Upload to YouTube
     await ref.update({ status: 'WAITING_FOR_UPLOAD_SLOT', updatedAt: Date.now() });
@@ -183,7 +218,7 @@ async function processItem(item) {
     try {
       await acquireUploadLock(db, workerLockId);
       await ref.update({ status: 'UPLOADING', upload_progress: 0, updatedAt: Date.now() });
-      ytResult = await uploadToYouTube(result.outputPath, subjectLabel, async (pct) => {
+      ytResult = await uploadToYouTube(targetVideoPath, subjectLabel, async (pct) => {
         await ref.update({ upload_progress: pct, updatedAt: Date.now() });
       });
     } finally {
