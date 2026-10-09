@@ -5,6 +5,10 @@ on:
     types: [start-processing]
   workflow_dispatch:
 
+concurrency:
+  group: class-bot-queue
+  cancel-in-progress: false
+
 jobs:
   process-class:
     runs-on: ubuntu-latest

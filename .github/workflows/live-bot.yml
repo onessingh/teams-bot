@@ -7,6 +7,10 @@ on:
   schedule:
     - cron: '*/10 * * * *'
 
+concurrency:
+  group: live-bot-queue
+  cancel-in-progress: false
+
 jobs:
   process-live-class:
     runs-on: ubuntu-latest
