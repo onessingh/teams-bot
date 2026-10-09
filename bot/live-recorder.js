@@ -964,9 +964,11 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
 
     const startTime = Date.now();
     let loopCount = 0;
-      let lobbyWaitLoops = 0;
+    let lobbyWaitLoops = 0;
+    let aloneCount = 0;
+    let noUiCount = 0;
     let maxParticipants = 0;
-          const recentCounts = [];
+    const recentCounts = [];
     
     const teacherScores = {};
     let lockedTeacher = null;
@@ -1070,47 +1072,74 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
       // End meeting detection
       try {
         const stats = await page.evaluate(() => {
-            const text = document.body.textContent || "";
+            const text = (document.body.textContent || "").toLowerCase();
             let ended = false;
             let currentCount = 0;
-              if (text.includes("The meeting has ended") || text.includes("was ended by organizer") || text.includes("You've left the meeting") || text.includes("removed you from the meeting") || text.includes("You were removed from the meeting") || text.includes("You're disconnected")) {
-                  ended = true;
-              }
+            if (
+              text.includes("the meeting has ended") ||
+              text.includes("meeting has ended") ||
+              text.includes("meeting ended") ||
+              text.includes("call ended") ||
+              text.includes("was ended by organizer") ||
+              text.includes("organizer ended") ||
+              text.includes("you've left the meeting") ||
+              text.includes("you left the meeting") ||
+              text.includes("removed you from the meeting") ||
+              text.includes("you were removed") ||
+              text.includes("you're disconnected") ||
+              (text.includes("rejoin") && !!document.querySelector('button[data-tid*="rejoin"], [data-tid="rejoin-button"]'))
+            ) {
+              ended = true;
+            }
 
-            // Check if bot is completely alone (only if explicit count of 1 is present, NOT 'Waiting for others to join')
-            if (text.includes("In this meeting (1)") || text.includes("Attendees (1)") || text.includes("Participants (1)")) {
-                // Do not mark ended immediately when alone; record normally unless meeting explicitly ended
+            if (text.includes("in this meeting (1)") || text.includes("attendees (1)") || text.includes("participants (1)") || text.includes("people (1)")) {
                 currentCount = 1;
             }
             
-            // Extract participant count
-            const match = text.match(/(?:In this meeting|Attendees|Participants) \((\d+)\)/);
+            const match = text.match(/(?:in this meeting|attendees|participants|people) \((\d+)\)/);
             if (match) {
                 currentCount = parseInt(match[1], 10);
             }
             
-            const inLobby = text.includes("We've let people in the meeting know you're waiting") || text.includes("When the meeting starts, we'll let people know you're waiting");
+            const inLobby = text.includes("we've let people in the meeting know you're waiting") || text.includes("when the meeting starts, we'll let people know you're waiting");
             
-            // Check if meeting stage or canvas is present in DOM (even when toolbar CSS is hidden)
             const hasMeetingUI = !!(
                 document.querySelector('[data-tid="calling-roster-stage"], [data-tid="video-gallery"], [data-tid="meeting-canvas"], [data-tid="screen-sharing-canvas"], div[class*="calling-stage"], div[class*="video-gallery"], [data-tid="hang-up-btn"], [data-tid="leave-button"], [data-tid="call-hangup"]') ||
                 (document.body.innerText || '').includes('Leave') ||
                 /(?:\d{2}:\d{2}|--:--)/.test(document.body.innerText || '')
             );
             
-            return { ended, currentCount, text, inLobby, hasMeetingUI };
+            return { ended, currentCount, inLobby, hasMeetingUI };
         });
         
         let meetingEnded = stats.ended;
         const currentCount = stats.currentCount;
-        
-        // Only trigger no-UI exit if stage is completely missing for 10 loops (2.5 mins)
-        if (!stats.inLobby && !stats.hasMeetingUI && loopCount > 40) {
-            console.log('[DEBUG] No meeting UI detected (no stage, no video, no call timer). Meeting likely ended or disconnected.');
-            meetingEnded = true;
+
+        // Alone in meeting check (if count === 1 for 3 consecutive checks = 45 seconds)
+        if (currentCount === 1) {
+            aloneCount++;
+            console.log(`[DEBUG] Bot is alone in meeting (1 participant) (${aloneCount}/3 checks)...`);
+            if (aloneCount >= 3 && loopCount > 4) {
+                console.log('[DEBUG] Bot has been alone in meeting for >45 seconds. Class ended.');
+                meetingEnded = true;
+            }
+        } else if (currentCount > 1) {
+            aloneCount = 0;
         }
         
-        // Lobby Timeout Logic (10 minutes)
+        // Missing stage UI check (if UI missing for 4 checks = 1 min)
+        if (!stats.inLobby && !stats.hasMeetingUI && loopCount > 6) {
+            noUiCount++;
+            console.log(`[DEBUG] No meeting UI/canvas detected (${noUiCount}/4 checks)...`);
+            if (noUiCount >= 4) {
+                console.log('[DEBUG] No meeting UI detected for 1 minute. Meeting ended or disconnected.');
+                meetingEnded = true;
+            }
+        } else {
+            noUiCount = 0;
+        }
+        
+        // Lobby Timeout Logic (30 minutes)
         if (stats.inLobby) {
             lobbyWaitLoops++;
             if (lobbyWaitLoops > 120) {
@@ -1118,7 +1147,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                 meetingEnded = true;
             }
         } else {
-            lobbyWaitLoops = 0; // Reset if admitted
+            lobbyWaitLoops = 0;
         }
         
         if (currentCount > maxParticipants) {
@@ -1130,23 +1159,24 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             if (recentCounts.length > 8) recentCounts.shift();
         }
 
-        if (loopCount > 20 && recentCounts.length >= 4) {
+        // Exodus / Drop detection
+        if (loopCount > 6 && recentCounts.length >= 3) {
             const recentMax = Math.max(...recentCounts);
-            if (recentMax > 5) {
-                if (currentCount > 0 && currentCount <= Math.ceil(recentMax * 0.60)) {
+            if (recentMax >= 4) {
+                if (currentCount > 0 && currentCount <= Math.ceil(recentMax * 0.50)) {
                     console.log(`[DEBUG] Sudden mass exodus detected! Recent max was ${recentMax}, now ${currentCount}. Ending meeting.`);
                     meetingEnded = true;
                 }
-            } else if (recentMax > 1 && recentMax <= 5) {
-                if (currentCount > 0 && currentCount <= 2 && currentCount < recentMax) {
-                    console.log(`[DEBUG] Small meeting drop detected! Recent max was ${recentMax}, now ${currentCount}. Ending meeting.`);
+            } else if (recentMax > 1 && recentMax < 4) {
+                if (currentCount === 1) {
+                    console.log(`[DEBUG] Small meeting drop detected (all ${recentMax} participants left). Ending meeting.`);
                     meetingEnded = true;
                 }
             }
         }
 
         if (meetingEnded) {
-          console.log('🏁 Meeting ended screen or Organizer departure detected. Stopping recording early.');
+          console.log('🏁 Meeting ended screen, Organizer departure, or zero participants detected. Stopping recording early.');
           break;
         }
       } catch (err) {}
