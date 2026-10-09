@@ -106,7 +106,7 @@ async function claimNextWaiting() {
                 current.status = 'STARTING';
                 current.startedAt = Date.now();
                 current.error = null;
-                if (process.env.GITHUB_REPOSITORY && process.env.GITHUB_RUN_ID) {
+                if (!current.run_url && process.env.GITHUB_REPOSITORY && process.env.GITHUB_RUN_ID) {
                     current.run_url = 'https://github.com/' + process.env.GITHUB_REPOSITORY + '/actions/runs/' + process.env.GITHUB_RUN_ID;
                 }
                 return current;
@@ -158,11 +158,29 @@ async function processItem(item) {
       try {
         const { execSync } = require('child_process');
         execSync(`gh run download ${runId} -n recorded-video --dir "${OUTPUT_DIR}"`, { stdio: 'inherit' });
-        const downloadedFiles = fs.readdirSync(OUTPUT_DIR).filter(f => f.endsWith('.mp4'));
+        
+        function findMp4Files(dir) {
+          let results = [];
+          if (!fs.existsSync(dir)) return results;
+          const list = fs.readdirSync(dir, { withFileTypes: true });
+          for (const entry of list) {
+            const full = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+              results = results.concat(findMp4Files(full));
+            } else if (entry.isFile() && entry.name.endsWith('.mp4') && fs.statSync(full).size > 1024) {
+              results.push(full);
+            }
+          }
+          return results;
+        }
+
+        const downloadedFiles = findMp4Files(OUTPUT_DIR);
         if (downloadedFiles.length > 0) {
-          targetVideoPath = path.join(OUTPUT_DIR, downloadedFiles[0]);
+          targetVideoPath = downloadedFiles[0];
           console.log(`[RETRY] Found downloaded video backup: ${targetVideoPath}`);
           skipRecording = true;
+        } else {
+          console.log('[RETRY] No .mp4 video found in downloaded artifact.');
         }
       } catch (err) {
         console.log('[RETRY] Artifact download via gh CLI failed or unavailable:', err.message);
