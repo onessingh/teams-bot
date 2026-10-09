@@ -68,11 +68,12 @@ async function checkAndTrigger() {
   }
   console.log(`[Scheduler] Currently active workers running/queued: ${activeWorkers}`);
 
-  // 2. Filter WAITING classes in trigger window
+  // 2. Filter WAITING & RETRY_REQUESTED classes in trigger window
   const waitingItems = items.filter(item => {
     const status = item.status || '';
     const scheduledTime = item.scheduledTime || 0;
-    if (status !== 'WAITING') return false;
+    if (status !== 'WAITING' && status !== 'RETRY_REQUESTED') return false;
+    if (status === 'RETRY_REQUESTED') return true; // immediate trigger for retries
     if (scheduledTime <= 0) return true; // immediate class
     return now >= scheduledTime - TRIGGER_WINDOW_MS && now <= scheduledTime + LATE_WINDOW_MS;
   });

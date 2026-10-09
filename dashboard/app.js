@@ -854,10 +854,16 @@ window.retryLiveUpload = async function(id) {
             updatedAt: Date.now()
         });
         const token = localStorage.getItem('teams_gh_pat');
+        let dispatched = false;
         if (token) {
-            triggerLiveBotDispatch(token, 1);
+            const launched = await triggerLiveBotDispatch(token, 1);
+            if (launched > 0) dispatched = true;
         }
-        alert('Retry requested! The bot will now download the recorded video backup and re-try YouTube upload.');
+        if (dispatched) {
+            alert('✅ Retry requested & GitHub Worker launched! Re-uploading video backup now...');
+        } else {
+            alert('📝 Retry requested in DB! Automated scheduler will pick this up in ~5 min, or click "Start Live Bot" / save GitHub token to run now.');
+        }
     } catch(e) {
         alert('Error requesting retry: ' + e.message);
     }
@@ -872,10 +878,18 @@ window.retryVodUpload = async function(id) {
             updatedAt: Date.now()
         });
         const token = localStorage.getItem('teams_gh_pat');
+        let dispatched = false;
         if (token) {
-            triggerGitHubAction(token);
+            try {
+                await triggerGitHubAction(token);
+                dispatched = true;
+            } catch(e) {}
         }
-        alert('Retry requested! The bot will now download the recorded video backup and re-try YouTube upload.');
+        if (dispatched) {
+            alert('✅ Retry requested & GitHub Worker launched! Re-uploading video backup now...');
+        } else {
+            alert('📝 Retry requested in DB! Click "Start Cloud Bot" to launch the worker immediately.');
+        }
     } catch(e) {
         alert('Error requesting retry: ' + e.message);
     }
