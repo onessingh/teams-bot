@@ -1051,13 +1051,14 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         const signals = participantData.signals || {};
         const isSharing = participantData.isSharing;
 
-        // Accumulate scores
+        // Accumulate scores continuously across the class
         for (const [name, score] of Object.entries(signals)) {
           teacherScores[name] = (teacherScores[name] || 0) + score;
         }
 
-        // Lock teacher fast once score reaches 10+ pts or loopCount >= 8 (2 mins into class)
-        if (loopCount >= 8 || Object.values(teacherScores).some(s => s >= 10)) {
+        // Lock teacher once cumulative score reaches >= 40 pts OR after 15 mins (loopCount >= 60)
+        // This guarantees students asking short questions are NEVER mistaken for the teacher!
+        if (loopCount >= 60 || Object.values(teacherScores).some(s => s >= 40)) {
           let topTeacher = null;
           let maxScore = 0;
           for (const [name, score] of Object.entries(teacherScores)) {
@@ -1067,26 +1068,26 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             }
           }
 
-          if (topTeacher && maxScore >= 10) {
+          if (topTeacher && maxScore >= 40) {
             if (lockedTeacher !== topTeacher) {
               lockedTeacher = topTeacher;
-              console.log(`🎓 Locked Teacher Identified: "${lockedTeacher}" (Score: ${maxScore})`);
+              console.log(`🎓 Locked Teacher Identified: "${lockedTeacher}" (Cumulative Score: ${maxScore})`);
             }
 
-            // Check if locked teacher is missing from stage & roster (8 checks = 2 mins grace period)
+            // Check if locked real teacher has left stage & roster (12 checks = 3 mins grace period)
             if (!signals[lockedTeacher]) {
               teacherMissingCount++;
-              console.log(`⚠️ Teacher "${lockedTeacher}" missing from meeting/roster (${teacherMissingCount}/8 checks)...`);
-              if (teacherMissingCount >= 8) {
-                console.log(`🎓 Teacher "${lockedTeacher}" has left the meeting for >2 mins. Stopping recording early!`);
+              console.log(`⚠️ Teacher "${lockedTeacher}" missing from meeting/roster (${teacherMissingCount}/12 checks)...`);
+              if (teacherMissingCount >= 12) {
+                console.log(`🎓 Real Teacher "${lockedTeacher}" has left the meeting for >3 mins. Stopping recording early!`);
                 break;
               }
             } else {
               teacherMissingCount = 0;
             }
 
-            // Check for silent meeting (no screen share & no teacher presentation for 3 mins)
-            if (!isSharing && loopCount > 20) {
+            // Check for silent meeting after presentation ends (no screen share & no presentation for 3 mins)
+            if (!isSharing && loopCount > 40) {
               noActivityCount++;
               if (noActivityCount >= 12) { // 3 mins without screen share / active presentation
                 console.log(`🎓 Screen share & presentation inactive for >3 mins after class. Stopping recording early!`);
