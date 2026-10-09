@@ -1,4 +1,4 @@
-﻿const { chromium } = require('playwright');
+const { chromium } = require('playwright');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -284,7 +284,7 @@ async function recordClass(url, outputPath, cookies, options = {}) {
         }
         // Force hide everything else
         const style = document.createElement('style');
-        style.innerHTML = '* { cursor: none !important; } [data-testid="player-controls"], .mejs-controls, .vjs-control-bar { display: none !important; opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; }';
+        style.innerHTML = '* { cursor: none !important; } [data-testid="player-controls"], .mejs-controls, .vjs-control-bar, [data-tid*="notification"], [data-tid*="toast"], [data-tid*="banner"], [role="alert"], [role="status"], .ts-toast-notification { display: none !important; opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; height: 0 !important; }';
         document.head.appendChild(style);
       });
     } catch(e) {}

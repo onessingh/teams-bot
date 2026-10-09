@@ -183,6 +183,65 @@ async function dismissMigrationBanner(page) {
   }
 }
 
+// Dismisses Teams recording toast notifications ("Recording has started") and hides them in DOM
+async function dismissRecordingNotifications(page) {
+  try {
+    await page.evaluate(() => {
+      const elements = Array.from(document.querySelectorAll('div, section, header, article, [role="alert"], [role="status"]'));
+      
+      for (const el of elements) {
+        const text = (el.innerText || el.textContent || '').toLowerCase();
+        if (
+          text.includes('recording has started') ||
+          text.includes('recording started') ||
+          text.includes('privacy policy') ||
+          text.includes('transcription has started') ||
+          text.includes('you must agree to be included') ||
+          text.includes('started by')
+        ) {
+          const closeBtn = Array.from(el.querySelectorAll('button, [role="button"], [aria-label]')).find(b => {
+            const label = ((b.getAttribute('aria-label') || '') + ' ' + (b.getAttribute('title') || '') + ' ' + (b.textContent || '')).toLowerCase();
+            return label.includes('close') || label.includes('dismiss') || label.includes('✕') || label.includes('x') || b.querySelector('svg');
+          }) || el.querySelector('button');
+
+          if (closeBtn) {
+            try { closeBtn.click(); } catch(e) {}
+          }
+
+          el.style.setProperty('display', 'none', 'important');
+          el.style.setProperty('visibility', 'hidden', 'important');
+          el.style.setProperty('opacity', '0', 'important');
+          el.style.setProperty('pointer-events', 'none', 'important');
+          el.style.setProperty('height', '0px', 'important');
+          el.style.setProperty('min-height', '0px', 'important');
+          el.style.setProperty('max-height', '0px', 'important');
+          el.style.setProperty('margin', '0px', 'important');
+          el.style.setProperty('padding', '0px', 'important');
+        }
+      }
+
+      if (!document.getElementById('anti-recording-toast-style')) {
+        const style = document.createElement('style');
+        style.id = 'anti-recording-toast-style';
+        style.innerHTML = `
+          [data-tid*="notification-banner"],
+          [data-tid*="recording-notification"],
+          [data-tid*="toast"],
+          .ts-toast-notification,
+          .ui-toast {
+            display: none !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+            height: 0 !important;
+            pointer-events: none !important;
+          }
+        `;
+        document.head.appendChild(style);
+      }
+    });
+  } catch(e) {}
+}
+
 async function recordLiveClass(url, outputPath, cookies, options = {}) {
   const maxMs = options.maxMs || MAX_MS;
   let isNativeFullScreen = false;
@@ -891,6 +950,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
 
     const bannerOffset = await dismissMigrationBanner(page);
     console.log('[DEBUG] Banner offset (px):', bannerOffset);
+    await dismissRecordingNotifications(page);
 
     // Start FFmpeg
     if (options.onStatus) await options.onStatus('RECORDING');
@@ -914,6 +974,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     
     while (Date.now() - startTime < recordMs) {
       await sleep(15000); // Check every 15 seconds
+      await dismissRecordingNotifications(page);
       try {
         if (options.onFrame) {
             const buf = await page.screenshot({ type: 'jpeg', quality: 30 });
