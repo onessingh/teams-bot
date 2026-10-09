@@ -264,7 +264,7 @@ async function processItem(item) {
     console.log(`✅ Done: ${item.title}`);
 
     // If recording was cut short (max duration), queue next part
-    if (result.isPartial) {
+    if (result && result.isPartial) {
       const nextPartNum = (item.part || 1) + 1;
       const newTitle = `${item.title || 'Class'} (Part ${nextPartNum})`;
       const newResumeTime = (item.resumeTime || 0) + Math.floor(result.durationRecordedMs / 1000);
