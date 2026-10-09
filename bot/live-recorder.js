@@ -71,40 +71,55 @@ async function performInlineLogin(page, creds) {
       await page.waitForTimeout(4000);
     }
 
-    const emailInput = page.locator('input[type="email"], input[name="loginfmt"]').first();
-    if (await emailInput.isVisible({ timeout: 5000 })) {
+    let targetPage = page;
+    const context = page.context();
+    for (const p of context.pages()) {
+      if (p !== page && (p.url().includes('login.') || p.url().includes('microsoft'))) {
+        targetPage = p;
+        break;
+      }
+    }
+
+    const emailInput = targetPage.locator('input[type="email"], input[name="loginfmt"]').first();
+    if (await emailInput.isVisible({ timeout: 7000 })) {
       console.log('[DEBUG] Entering email...');
       await emailInput.fill(creds.email);
-      await page.waitForTimeout(500);
-      await page.keyboard.press('Enter');
-      await page.waitForTimeout(2000);
-      try { await page.click('#idSIButton9, input[type="submit"]', { timeout: 2000, force: true }); } catch(e){}
+      await targetPage.waitForTimeout(500);
+      await targetPage.keyboard.press('Enter');
+      await targetPage.waitForTimeout(2000);
+      try { await targetPage.click('#idSIButton9, input[type="submit"]', { timeout: 2000, force: true }); } catch(e){}
+    } else {
+      console.log('[DEBUG] ⚠️ Email input not found during inline login.');
+      return false;
     }
 
     try {
-      const bypass = page.locator('#idA_PWD_SwitchToPassword, #idA_PWD_SwitchToCredPicker').first();
+      const bypass = targetPage.locator('#idA_PWD_SwitchToPassword, #idA_PWD_SwitchToCredPicker').first();
       if (await bypass.isVisible({ timeout: 3000 })) {
         console.log('[DEBUG] Clicking "Use your password" bypass...');
         await bypass.click({ force: true });
-        await page.waitForTimeout(2000);
+        await targetPage.waitForTimeout(2000);
       }
     } catch(e){}
 
-    const pwdInput = page.locator('input[type="password"], input[name="passwd"]').first();
+    const pwdInput = targetPage.locator('input[type="password"], input[name="passwd"]').first();
     if (await pwdInput.isVisible({ timeout: 10000 })) {
       console.log('[DEBUG] Entering password...');
       await pwdInput.fill(creds.password);
-      await page.waitForTimeout(500);
-      await page.keyboard.press('Enter');
-      await page.waitForTimeout(2000);
-      try { await page.click('#idSIButton9, input[type="submit"]', { timeout: 2000, force: true }); } catch(e){}
+      await targetPage.waitForTimeout(500);
+      await targetPage.keyboard.press('Enter');
+      await targetPage.waitForTimeout(2000);
+      try { await targetPage.click('#idSIButton9, input[type="submit"]', { timeout: 2000, force: true }); } catch(e){}
+    } else {
+      console.log('[DEBUG] ⚠️ Password input not found during inline login.');
+      return false;
     }
 
     try {
-      const stayBtn = page.locator('#idSIButton9, input[value="Yes"]').first();
+      const stayBtn = targetPage.locator('#idSIButton9, input[value="Yes"]').first();
       if (await stayBtn.isVisible({ timeout: 3000 })) {
         await stayBtn.click({ force: true });
-        await page.waitForTimeout(3000);
+        await targetPage.waitForTimeout(3000);
       }
     } catch(e){}
 
@@ -368,18 +383,25 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         // If session cookies are expired, Teams shows a guest name input field.
         // SOL meetings REJECT guest join! We MUST perform inline login instead of joining as Guest.
         try {
-            const nameInput = page.locator('input[data-tid="prejoin-display-name-input"]');
+            const nameInput = page.locator('input[data-tid="prejoin-display-name-input"]').first();
             if (await nameInput.isVisible({ timeout: 2000 })) {
                 console.log('[DEBUG] ⚠️ Guest input detected! Session cookies expired. Triggering inline login with saved SOL creds...');
+                let loggedIn = false;
                 if (options.creds && options.creds.email && options.creds.password) {
-                    const loggedIn = await performInlineLogin(page, options.creds);
+                    loggedIn = await performInlineLogin(page, options.creds);
                     if (loggedIn) {
                         console.log('[DEBUG] Reloading meeting URL as authenticated SOL student...');
                         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 });
                         await page.waitForTimeout(5000);
                     }
-                } else {
-                    console.log('[DEBUG] ⚠️ No creds available for inline login! SOL meeting will reject Guest join.');
+                }
+                
+                // CRITICAL FALLBACK: If inline login failed or session cookies expired, fill Guest Name so Join now is enabled!
+                if (await nameInput.isVisible({ timeout: 2000 })) {
+                    console.log('[DEBUG] ⚠️ Guest input still visible! Filling student name fallback ("Raj Thakur")...');
+                    const studentName = (options.creds && options.creds.name) ? options.creds.name : 'Raj Thakur';
+                    await nameInput.fill(studentName);
+                    await page.waitForTimeout(1000);
                 }
             }
         } catch (e) {}
@@ -388,29 +410,20 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         try {
             console.log('[DEBUG] Checking if Mic is ON on prejoin...');
             const isMicOn = await page.evaluate(() => {
-                // The mic toggle is an <input type="checkbox" role="switch" data-tid="toggle-mute">
-                // data-cid="toggle-mute-true" means mic is ON (unmuted)
-                // data-cid="toggle-mute-false" means mic is OFF (muted)
                 const micInput = document.querySelector('input[data-tid="toggle-mute"]');
                 if (micInput) {
                     const dataCid = micInput.getAttribute('data-cid') || '';
                     const isChecked = micInput.checked;
-                    console.log('[DEBUG-DUMP] Mic input data-cid:', dataCid, 'checked:', isChecked);
-                    // toggle-mute-true = mic is ON (need to mute)
-                    // checked = true also means mic is ON on the prejoin screen
                     return dataCid === 'toggle-mute-true' || isChecked === true;
                 }
-                // Fallback: check aria-label buttons
                 const micBtns = Array.from(document.querySelectorAll('*')).filter(el => 
                     el.getAttribute('aria-label') && el.getAttribute('aria-label').toLowerCase().includes('mic')
                 );
-                micBtns.forEach(b => console.log('[DEBUG-DUMP] Prejoin Mic fallback:', b.outerHTML));
                 return false;
             });
             if (isMicOn) {
                 console.log('[DEBUG] Mic is ON on prejoin, clicking to mute...');
                 await page.evaluate(() => {
-                    // Click the checkbox input directly
                     const micInput = document.querySelector('input[data-tid="toggle-mute"]');
                     if (micInput) {
                         micInput.click();
@@ -466,6 +479,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     console.log('[DEBUG] Waiting to be admitted from lobby...');
     if (options.onStatus) await options.onStatus('WAITING_IN_LOBBY');
     let initLobbyWaitLoops = 0;
+    let stuckPrejoinCount = 0;
     let admitted = false;
     while (!admitted && initLobbyWaitLoops < 120) { 
         // Wait in lobby (up to 30 mins)
@@ -474,6 +488,11 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             console.log('[DEBUG-DUMP] Lobby screen text:', text.replace(/\n/g, ' | '));
             
             const lowerText = text.toLowerCase();
+
+            // Check if stuck on guest pre-join screen ("Type your name", "Enter a name to join")
+            if (lowerText.includes('enter a name to join') || lowerText.includes('type your name')) {
+                return 'stuck_prejoin';
+            }
             
             // DEFINITE lobby indicators
             const hardLobby = lowerText.includes('someone will let you in') || 
@@ -508,6 +527,26 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         if (isAdmitted === true) {
             admitted = true;
             break;
+        } else if (isAdmitted === 'stuck_prejoin') {
+            stuckPrejoinCount++;
+            console.log(`[DEBUG] ⚠️ Stuck on pre-join guest screen (attempt ${stuckPrejoinCount}/4). Filling guest name & clicking Join now...`);
+            try {
+                const nameInput = page.locator('input[data-tid="prejoin-display-name-input"]').first();
+                if (await nameInput.isVisible({ timeout: 2000 })) {
+                    const studentName = (options.creds && options.creds.name) ? options.creds.name : 'Raj Thakur';
+                    await nameInput.fill(studentName);
+                    await page.waitForTimeout(1000);
+                }
+                const jBtn = page.locator('button[data-tid="prejoin-join-button"], button[data-tid="join-button"], button:has-text("Join now")').first();
+                if (await jBtn.isVisible({ timeout: 2000 })) {
+                    await jBtn.click({ force: true });
+                }
+            } catch(e) {}
+
+            if (stuckPrejoinCount >= 4) {
+                console.log('[DEBUG] ⚠️ Meeting stuck on pre-join screen for 1 minute without joining. Exiting lobby wait loop.');
+                break;
+            }
         } else if (isAdmitted === 'error_screen') {
             console.log('[DEBUG] ⚠️ "We ran into a problem" screen detected. Attempting to click "Try again" or reload meeting...');
             try {
