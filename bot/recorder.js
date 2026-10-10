@@ -357,8 +357,8 @@ async function recordClass(url, outputPath, cookies, options = {}) {
           const videos = Array.from(document.querySelectorAll('video'));
           const v = videos.find(x => x.currentTime > 0) || videos[0];
           if (!v) return false;
-          // Video is considered ended if it hit the 'ended' state, or it's paused near the end
-          return v.ended || (v.paused && v.currentTime > 0 && Math.abs(v.duration - v.currentTime) < 2);
+          // Video is considered ended if it hit the 'ended' state, paused near the end, or reached full duration
+          return v.ended || (v.duration > 0 && v.currentTime >= v.duration - 1) || (v.paused && v.currentTime > 0 && Math.abs(v.duration - v.currentTime) < 3);
         });
         
         if (isEnded) {

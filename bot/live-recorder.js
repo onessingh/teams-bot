@@ -1097,6 +1097,18 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             if (match) {
                 currentCount = parseInt(match[1], 10);
             }
+
+            // Fallback check on roster button aria-label or text (e.g. "People (14)" or "Participants 12")
+            if (currentCount === 0) {
+              const rosterBtn = document.querySelector('[data-tid="roster-button"], [aria-label*="participant" i], [aria-label*="people" i], [data-tid="calling-roster-stage"]');
+              if (rosterBtn) {
+                const labelText = ((rosterBtn.getAttribute('aria-label') || '') + ' ' + (rosterBtn.innerText || '')).toLowerCase();
+                const numMatch = labelText.match(/(\d+)/);
+                if (numMatch) {
+                  currentCount = parseInt(numMatch[1], 10);
+                }
+              }
+            }
             
             const inLobby = text.includes("we've let people in the meeting know you're waiting") || text.includes("when the meeting starts, we'll let people know you're waiting");
             
@@ -1178,6 +1190,20 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         }
       } catch (err) {}
     }
+
+    try {
+      console.log('🚪 Attempting to click Hang Up / Leave button to exit Teams class gracefully...');
+      await page.evaluate(() => {
+        const btns = Array.from(document.querySelectorAll('button, [role="button"]'));
+        const leaveBtn = btns.find(b => {
+          const tid = (b.getAttribute('data-tid') || '').toLowerCase();
+          const label = ((b.getAttribute('aria-label') || '') + ' ' + (b.innerText || '')).toLowerCase();
+          return tid.includes('hang-up') || tid.includes('leave') || tid.includes('hangup') || label.includes('hang up') || label === 'leave';
+        });
+        if (leaveBtn) leaveBtn.click();
+      });
+      await sleep(1500);
+    } catch (le) {}
 
     await stopRecorder(ffmpeg);
     ffmpeg = null;
