@@ -273,12 +273,14 @@ async function processItem(item) {
       await releaseUploadLock(db, workerLockId);
     }
 
+    const youtubeUrl = typeof ytResult === 'string' ? ytResult : (ytResult && ytResult.url ? ytResult.url : null);
     await ref.update({
-      status: 'DONE',
-      youtube_url: ytResult?.url || null,
+      status: 'COMPLETED',
+      youtube_url: youtubeUrl,
+      completedAt: Date.now(),
       updatedAt: Date.now()
     });
-    console.log(`✅ Done: ${item.title}`);
+    console.log(`✅ Done: ${item.title} (YouTube: ${youtubeUrl})`);
 
     // If recording was cut short (max duration), queue next part
     if (result && result.isPartial) {

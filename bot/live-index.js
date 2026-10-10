@@ -278,14 +278,15 @@ async function processItem(item) {
       await releaseUploadLock(db, workerLockId);
     }
 
+    const finalYoutubeUrl = typeof youtubeUrl === 'string' ? youtubeUrl : (youtubeUrl && youtubeUrl.url ? youtubeUrl.url : null);
     await ref.update({
       status: 'COMPLETED',
-      youtube_url: youtubeUrl,
+      youtube_url: finalYoutubeUrl,
       completedAt: Date.now(),
       updatedAt: Date.now(),
       error: null
     });
-    console.log(`✅ ${item.title} uploaded: ${youtubeUrl}`);
+    console.log(`✅ ${item.title} uploaded: ${finalYoutubeUrl}`);
 
     if (result && result.wasSplit) {
       const nextPartNum = (item.part || 1) + 1;
