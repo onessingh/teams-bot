@@ -220,17 +220,30 @@ async function processItem(item) {
 
     try {
       if (fs.existsSync('intro.mp4')) {
-        console.log('[INFO] Normalizing intro.mp4 for concatenation...');
+        console.log('[INFO] Normalizing intro.mp4 for concatenation (30 fps)...');
         const { execSync } = require('child_process');
-        execSync('ffmpeg -y -i intro.mp4 -vf "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,fps=15" -c:v libx264 -preset ultrafast -crf 23 -pix_fmt yuv420p -c:a aac -b:a 128k -ar 44100 -ac 2 -movflags +faststart normalized_intro.mp4', {stdio: 'inherit'});
+        const fps = process.env.RECORDING_FPS || '30';
+        execSync(`ffmpeg -y -i intro.mp4 -vf "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,fps=${fps}" -c:v libx264 -preset ultrafast -crf 23 -pix_fmt yuv420p -c:a aac -b:a 128k -ar 44100 -ac 2 -movflags +faststart normalized_intro.mp4`, {stdio: 'inherit'});
         
-        if (fs.existsSync('normalized_intro.mp4') && fs.existsSync(result.outputPath)) {
-          console.log('[INFO] Concatenating videos using extremely fast stream copy...');
-          fs.writeFileSync('concat_list.txt', `file 'normalized_intro.mp4'\nfile '${result.outputPath}'\nfile 'normalized_intro.mp4'\n`);
-          const finalPath = result.outputPath.replace('.mp4', '_final.mp4');
-          execSync(`ffmpeg -y -f concat -safe 0 -i concat_list.txt -c copy "${finalPath}"`, {stdio: 'inherit'});
+        const vidPath = result ? result.outputPath : targetVideoPath;
+        if (fs.existsSync('normalized_intro.mp4') && vidPath && fs.existsSync(vidPath)) {
+          const originalSize = fs.statSync(vidPath).size;
+          console.log('[INFO] Concatenating videos...');
+          fs.writeFileSync('concat_list.txt', `file 'normalized_intro.mp4'\nfile '${vidPath}'\nfile 'normalized_intro.mp4'\n`);
+          const finalPath = vidPath.replace('.mp4', '_final.mp4');
+          
+          try {
+            execSync(`ffmpeg -y -f concat -safe 0 -i concat_list.txt -c copy "${finalPath}"`, {stdio: 'inherit'});
+          } catch(ce) {}
+
+          // Verify concatenated size is larger than original video (preventing single intro truncation)
+          if (!fs.existsSync(finalPath) || fs.statSync(finalPath).size < originalSize) {
+            console.log('[INFO] Stream copy concat incomplete. Running re-encode filter_complex concat...');
+            execSync(`ffmpeg -y -i normalized_intro.mp4 -i "${vidPath}" -i normalized_intro.mp4 -filter_complex "[0:v][0:a][1:v][1:a][2:v][2:a]concat=n=3:v=1:a=1[v][a]" -map "[v]" -map "[a]" -c:v libx264 -preset ultrafast -crf 23 -c:a aac -b:a 128k "${finalPath}"`, {stdio: 'inherit'});
+          }
+
           if (fs.existsSync(finalPath) && fs.statSync(finalPath).size > 1024) {
-             fs.renameSync(finalPath, result.outputPath);
+             fs.renameSync(finalPath, vidPath);
              console.log('[INFO] Successfully attached intro and outro to the class recording!');
           }
         }
