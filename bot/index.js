@@ -153,14 +153,17 @@ async function processItem(item) {
       if (entry.isDirectory()) {
         results = results.concat(findMp4Files(full));
       } else if (entry.isFile() && entry.name.endsWith('.mp4') && fs.statSync(full).size > 1024) {
-        results.push(full);
+        const lower = entry.name.toLowerCase();
+        if (!lower.includes('intro') && !lower.includes('outro')) {
+          results.push(full);
+        }
       }
     }
     return results;
   }
 
   // 1. Check local disk for existing video backup from previous attempt
-  const localBackups = findMp4Files(OUTPUT_DIR).concat(findMp4Files('.'));
+  const localBackups = findMp4Files(OUTPUT_DIR);
   if (localBackups.length > 0) {
     targetVideoPath = localBackups[0];
     console.log(`[RETRY] Found local video backup: ${targetVideoPath}`);
