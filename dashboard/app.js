@@ -625,7 +625,7 @@ async function updateGitHubLiveCron() {
         const crons = [];
         Object.values(queue).forEach(item => {
             if (item.status === 'WAITING' && item.scheduledTime) {
-                const d = new Date(item.scheduledTime - 15 * 60 * 1000);
+                const d = new Date(item.scheduledTime - 10 * 60 * 1000);
                 const cronStr = `${d.getUTCMinutes()} ${d.getUTCHours()} ${d.getUTCDate()} ${d.getUTCMonth() + 1} *`;
                 if (!crons.includes(cronStr)) crons.push(cronStr);
             }
@@ -744,8 +744,8 @@ populateSubjects('vod-semester', 'vod-subject');
 
       for (const item of window.liveQueueItemsData) {
           if (item.status === 'WAITING' && item.scheduledTime > 0) {
-              // Same time window as backend: 20 mins before to 5 mins after
-              if (now >= item.scheduledTime - (20 * 60 * 1000) && now <= item.scheduledTime + (5 * 60 * 1000)) {
+              // Same time window as backend: 10 mins before to 5 mins after
+              if (now >= item.scheduledTime - (10 * 60 * 1000) && now <= item.scheduledTime + (5 * 60 * 1000)) {
                   
                   if (!window.autoTriggerFired) {
                       window.autoTriggerFired = true;
@@ -794,8 +794,8 @@ setInterval(async () => {
             const elId = `live-elapsed-${item.id}`;
             const elapsedDiv = document.getElementById(elId);
             
-            // If within 20 mins, trigger
-            if (now >= item.scheduledTime - (20 * 60 * 1000) && now <= item.scheduledTime + (5 * 60 * 1000)) {
+            // If within 10 mins, trigger
+            if (now >= item.scheduledTime - (10 * 60 * 1000) && now <= item.scheduledTime + (5 * 60 * 1000)) {
                 if (elapsedDiv) elapsedDiv.innerHTML = '<span class="text-blue-600">Auto-triggering now...</span>';
                 
                 if (!window.autoTriggerFired) {

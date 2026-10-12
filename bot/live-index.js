@@ -91,7 +91,7 @@ async function claimNextWaiting() {
     snap.forEach(child => {
         const item = child.val() || {};
         if ((item.status === 'WAITING' || item.status === 'RETRY_REQUESTED') && item.url) {
-            if (!item.scheduledTime || now >= item.scheduledTime - (25 * 60 * 1000) || item.status === 'RETRY_REQUESTED') {
+            if (!item.scheduledTime || now >= item.scheduledTime - (10 * 60 * 1000) || item.status === 'RETRY_REQUESTED') {
                 candidates.push({ id: child.key, ...item });
             }
         }
@@ -271,9 +271,19 @@ async function processItem(item) {
     try {
       await acquireUploadLock(db, workerLockId);
       await ref.update({ status: 'UPLOADING', live_frame: null, upload_progress: 0, updatedAt: Date.now() });
-      youtubeUrl = await uploadToYouTube(targetVideoPath, item.subject || item.title || safeName, async (pct) => {
+
+      let playlistName = null;
+      if (typeof item.subject === 'string' && item.subject.trim()) {
+        playlistName = item.subject.trim();
+        if (item.semester && !playlistName.toLowerCase().includes('sem')) {
+          playlistName = `${playlistName} (Sem ${item.semester})`;
+        }
+      }
+      const videoTitle = item.title || `Live Class - ${new Date().toLocaleDateString('en-IN')}`;
+
+      youtubeUrl = await uploadToYouTube(targetVideoPath, playlistName, async (pct) => {
           await ref.update({ upload_progress: pct, updatedAt: Date.now() });
-      });
+      }, { videoTitle });
     } finally {
       await releaseUploadLock(db, workerLockId);
     }

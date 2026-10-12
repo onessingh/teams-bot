@@ -12,6 +12,9 @@ async function uploadToYouTube(videoPath, subject, onProgress) {
         throw new Error("No YouTube credentials found in environment variables.");
     }
 
+    const hasPlaylist = typeof subject === 'string' && subject.trim().length > 0;
+    const playlistTitle = hasPlaylist ? subject.trim() : null;
+
     let lastError = null;
     let finalUrl = null;
 
@@ -25,52 +28,60 @@ async function uploadToYouTube(videoPath, subject, onProgress) {
             
             let playlistId = null;
             let itemCount = 0;
-            const playlistTitle = subject ? subject.trim() : 'Teams Classes';
+            const dateStr = new Date().toLocaleDateString('en-IN');
 
-            console.log(`[YouTube] Looking for playlist: ${playlistTitle} on ${cred.name}`);
-            
-            let nextPageToken = null;
-            let found = false;
-            
-            do {
-                const playlistRes = await youtube.playlists.list({
-                    part: 'snippet,contentDetails',
-                    mine: true,
-                    maxResults: 50,
-                    pageToken: nextPageToken
-                });
+            if (playlistTitle) {
+                console.log(`[YouTube] Looking for playlist: ${playlistTitle} on ${cred.name}`);
                 
-                if (playlistRes.data.items) {
-                    for (const item of playlistRes.data.items) {
-                        if (item.snippet.title.toLowerCase() === playlistTitle.toLowerCase()) {
-                            playlistId = item.id;
-                            itemCount = item.contentDetails.itemCount || 0;
-                            found = true;
-                            break;
+                let nextPageToken = null;
+                let found = false;
+                
+                do {
+                    const playlistRes = await youtube.playlists.list({
+                        part: 'snippet,contentDetails',
+                        mine: true,
+                        maxResults: 50,
+                        pageToken: nextPageToken
+                    });
+                    
+                    if (playlistRes.data.items) {
+                        for (const item of playlistRes.data.items) {
+                            if (item.snippet.title.toLowerCase() === playlistTitle.toLowerCase()) {
+                                playlistId = item.id;
+                                itemCount = item.contentDetails.itemCount || 0;
+                                found = true;
+                                break;
+                            }
                         }
                     }
-                }
+                    
+                    if (found) break;
+                    nextPageToken = playlistRes.data.nextPageToken;
+                } while (nextPageToken);
                 
-                if (found) break;
-                nextPageToken = playlistRes.data.nextPageToken;
-            } while (nextPageToken);
-            
-            if (!playlistId) {
-                console.log(`[YouTube] Playlist not found. Creating new playlist: ${playlistTitle}`);
-                const createRes = await youtube.playlists.insert({
-                    part: 'snippet,status',
-                    requestBody: {
-                        snippet: { title: playlistTitle, description: 'Automated Class Recordings' },
-                        status: { privacyStatus: 'unlisted' }
-                    }
-                });
-                playlistId = createRes.data.id;
-                itemCount = 0;
+                if (!playlistId) {
+                    console.log(`[YouTube] Playlist not found. Creating new playlist: ${playlistTitle}`);
+                    const createRes = await youtube.playlists.insert({
+                        part: 'snippet,status',
+                        requestBody: {
+                            snippet: { title: playlistTitle, description: 'Automated Class Recordings' },
+                            status: { privacyStatus: 'unlisted' }
+                        }
+                    });
+                    playlistId = createRes.data.id;
+                    itemCount = 0;
+                }
+            } else {
+                console.log('[YouTube] No subject/semester selected. Skipping playlist creation.');
             }
 
-            const dateStr = new Date().toLocaleDateString('en-IN');
-            const classNum = itemCount + 1;
-            const finalTitle = `${playlistTitle} - Class ${classNum} - ${dateStr}`;
+            let finalTitle;
+            if (playlistTitle) {
+                const classNum = itemCount + 1;
+                finalTitle = `${playlistTitle} - Class ${classNum} - ${dateStr}`;
+            } else {
+                finalTitle = (options && options.videoTitle) ? options.videoTitle : `Teams Class - ${dateStr}`;
+            }
             console.log(`[YouTube] Generated Video Title: ${finalTitle}`);
 
             const fileSize = fs.statSync(videoPath).size;

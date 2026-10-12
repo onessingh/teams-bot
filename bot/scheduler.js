@@ -32,7 +32,7 @@ admin.initializeApp({
 const db = admin.database();
 const REPO = process.env.GITHUB_REPOSITORY || 'onessingh/teams-bot';
 const GH_TOKEN = process.env.GH_SCHEDULER_TOKEN;
-const TRIGGER_WINDOW_MS = 25 * 60 * 1000; // 25 minutes before class
+const TRIGGER_WINDOW_MS = 10 * 60 * 1000; // 10 minutes before class
 const LATE_WINDOW_MS = 35 * 60 * 1000;    // 35 minutes after class start (half an hour+ late)
 
 async function checkAndTrigger() {

@@ -260,15 +260,22 @@ async function processItem(item) {
 
     // Upload to YouTube
     await ref.update({ status: 'WAITING_FOR_UPLOAD_SLOT', updatedAt: Date.now() });
-    const workerLockId = `vod_${item.id}_${Date.now()}`;
-    const subjectLabel = typeof item.subject === 'string' && item.subject.trim() ? item.subject.trim() : 'Teams Classes';
+    let playlistName = null;
+    if (typeof item.subject === 'string' && item.subject.trim()) {
+      playlistName = item.subject.trim();
+      if (item.semester && !playlistName.toLowerCase().includes('sem')) {
+        playlistName = `${playlistName} (Sem ${item.semester})`;
+      }
+    }
+    const videoTitle = item.title || `Teams Class - ${new Date().toLocaleDateString('en-IN')}`;
+
     let ytResult = null;
     try {
       await acquireUploadLock(db, workerLockId);
       await ref.update({ status: 'UPLOADING', upload_progress: 0, updatedAt: Date.now() });
-      ytResult = await uploadToYouTube(targetVideoPath, subjectLabel, async (pct) => {
+      ytResult = await uploadToYouTube(targetVideoPath, playlistName, async (pct) => {
         await ref.update({ upload_progress: pct, updatedAt: Date.now() });
-      });
+      }, { videoTitle });
     } finally {
       await releaseUploadLock(db, workerLockId);
     }
