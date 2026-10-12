@@ -951,6 +951,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     let lobbyWaitLoops = 0;
     let aloneCount = 0;
     let noUiCount = 0;
+    let exodusCount = 0;
     let maxParticipants = 0;
     const recentCounts = [];
     
@@ -1107,33 +1108,55 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
               ended = true;
             }
 
-            if (text.includes("in this meeting (1)") || text.includes("attendees (1)") || text.includes("participants (1)") || text.includes("people (1)")) {
-                currentCount = 1;
-            }
-            
-            const match = text.match(/(?:in this meeting|attendees|participants|people) \((\d+)\)/);
-            if (match) {
-                currentCount = parseInt(match[1], 10);
+            // 1. Direct check on roster button badge/tile (e.g. data-tid="roster-button-tile" with text "15")
+            const rosterTile = document.querySelector('[data-tid="roster-button-tile"], #roster-button [data-tid*="tile"]');
+            if (rosterTile && rosterTile.textContent) {
+              const n = parseInt(rosterTile.textContent.trim(), 10);
+              if (!isNaN(n) && n > 0) currentCount = n;
             }
 
-            // Fallback check on roster button aria-label or text (e.g. "People (14)" or "Participants 12")
+            // 2. Check roster button textContent (works even when toolbar has display: none)
             if (currentCount === 0) {
-              const rosterBtn = document.querySelector('[data-tid="roster-button"], [aria-label*="participant" i], [aria-label*="people" i], [data-tid="calling-roster-stage"]');
+              const rosterBtn = document.querySelector('#roster-button, [data-tid="roster-button"], [data-inp="roster-button"], [aria-label*="participant" i], [aria-label*="people" i]');
               if (rosterBtn) {
-                const labelText = ((rosterBtn.getAttribute('aria-label') || '') + ' ' + (rosterBtn.innerText || '')).toLowerCase();
+                const labelText = ((rosterBtn.getAttribute('aria-label') || '') + ' ' + (rosterBtn.textContent || '')).toLowerCase();
                 const numMatch = labelText.match(/(\d+)/);
                 if (numMatch) {
                   currentCount = parseInt(numMatch[1], 10);
                 }
               }
             }
+
+            // 3. Fallback regex match across page textContent
+            if (currentCount === 0) {
+              if (text.includes("in this meeting (1)") || text.includes("attendees (1)") || text.includes("participants (1)") || text.includes("people (1)")) {
+                currentCount = 1;
+              }
+              const match = text.match(/(?:in this meeting|attendees|participants|people)\s*\(?(\d+)\)?/i) || text.match(/(\d+)\s*(?:people|participants|attendees)/i);
+              if (match) {
+                currentCount = parseInt(match[1], 10);
+              }
+            }
+
+            // 4. Count video/participant tiles in the gallery
+            const galleryTiles = document.querySelectorAll('[data-tid="video-tile"], [data-cid="video-tile"], [class*="video-tile"], [class*="participant"], [data-tid="author"]');
+            if (galleryTiles.length > 0 && galleryTiles.length > currentCount) {
+              currentCount = galleryTiles.length;
+            }
             
             const inLobby = text.includes("we've let people in the meeting know you're waiting") || text.includes("when the meeting starts, we'll let people know you're waiting");
             
+            // Check if meeting UI / canvas is present
             const hasMeetingUI = !!(
-                document.querySelector('[data-tid="calling-roster-stage"], [data-tid="video-gallery"], [data-tid="meeting-canvas"], [data-tid="screen-sharing-canvas"], div[class*="calling-stage"], div[class*="video-gallery"], [data-tid="hang-up-btn"], [data-tid="leave-button"], [data-tid="call-hangup"]') ||
-                (document.body.innerText || '').includes('Leave') ||
-                /(?:\d{2}:\d{2}|--:--)/.test(document.body.innerText || '')
+                currentCount > 0 ||
+                galleryTiles.length > 0 ||
+                document.querySelector('video') ||
+                document.querySelector('canvas') ||
+                document.querySelector('#roster-button, [data-inp="roster-button"], [data-tid="roster-button"], [data-tid="hang-up-btn"], [data-tid="leave-button"], [data-tid="call-hangup"], #hangup-button') ||
+                document.querySelector('[data-tid="calling-roster-stage"], [data-tid="video-gallery"], [data-tid="meeting-canvas"], [data-tid="screen-sharing-canvas"]') ||
+                text.includes('leave') ||
+                text.includes('people') ||
+                /(?:\d{2}:\d{2}|--:--)/.test(text)
             );
             
             return { ended, currentCount, inLobby, hasMeetingUI };
@@ -1154,8 +1177,8 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             aloneCount = 0;
         }
         
-        // Missing stage UI check (if UI missing for 4 checks = 1 min)
-        if (!stats.inLobby && !stats.hasMeetingUI && loopCount > 6) {
+        // Missing stage UI check (ONLY if UI missing AND 0 participants detected for 4 checks)
+        if (!stats.inLobby && !stats.hasMeetingUI && currentCount === 0 && loopCount > 6) {
             noUiCount++;
             console.log(`[DEBUG] No meeting UI/canvas detected (${noUiCount}/4 checks)...`);
             if (noUiCount >= 4) {
@@ -1186,18 +1209,27 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             if (recentCounts.length > 8) recentCounts.shift();
         }
 
-        // Exodus / Drop detection
+        // Exodus / Drop detection (Require 3 consecutive checks = 45s to avoid false triggers)
         if (loopCount > 6 && recentCounts.length >= 3) {
             const recentMax = Math.max(...recentCounts);
             if (recentMax >= 4) {
                 if (currentCount > 0 && currentCount <= Math.ceil(recentMax * 0.50)) {
-                    console.log(`[DEBUG] Sudden mass exodus detected! Recent max was ${recentMax}, now ${currentCount}. Ending meeting.`);
-                    meetingEnded = true;
+                    exodusCount++;
+                    console.log(`[DEBUG] Potential mass exodus detected (${currentCount} <= ${Math.ceil(recentMax * 0.50)}) (${exodusCount}/3 checks)...`);
+                    if (exodusCount >= 3) {
+                        console.log(`[DEBUG] Confirmed mass exodus detected! Recent max was ${recentMax}, now ${currentCount}. Ending meeting.`);
+                        meetingEnded = true;
+                    }
+                } else {
+                    exodusCount = 0;
                 }
             } else if (recentMax > 1 && recentMax < 4) {
                 if (currentCount === 1) {
-                    console.log(`[DEBUG] Small meeting drop detected (all ${recentMax} participants left). Ending meeting.`);
-                    meetingEnded = true;
+                    aloneCount++;
+                    if (aloneCount >= 3) {
+                        console.log(`[DEBUG] Small meeting drop detected (all ${recentMax} participants left). Ending meeting.`);
+                        meetingEnded = true;
+                    }
                 }
             }
         }
