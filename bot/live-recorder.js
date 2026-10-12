@@ -198,52 +198,70 @@ async function dismissMigrationBanner(page) {
   }
 }
 
-// Dismisses Teams recording toast notifications ("Recording has started") and hides them in DOM
+// Dismisses Teams recording toast notifications ("Recording has started") safely without hiding the presentation stage
 async function dismissRecordingNotifications(page) {
   try {
     await page.evaluate(() => {
-      const elements = Array.from(document.querySelectorAll('div, section, header, article, [role="alert"], [role="status"]'));
-      
-      for (const el of elements) {
+      // 1. First, search and click explicit Dismiss/Close (X) buttons on the recording toast
+      const candidateButtons = Array.from(document.querySelectorAll('button, [role="button"], [aria-label]'));
+      for (const b of candidateButtons) {
+        const label = ((b.getAttribute('aria-label') || '') + ' ' + (b.getAttribute('title') || '') + ' ' + (b.innerText || '')).toLowerCase();
+        const tid = (b.getAttribute('data-tid') || '').toLowerCase();
+        
+        const toastBox = b.closest('[role="alert"], [role="dialog"], [role="status"], [data-tid*="notification"], [data-tid*="toast"], [data-tid*="banner"], [class*="toast"], [class*="banner"]');
+        if (toastBox) {
+          const boxText = (toastBox.innerText || toastBox.textContent || '').toLowerCase();
+          if (boxText.includes('recording') || boxText.includes('privacy policy') || boxText.includes('transcription') || boxText.includes('agree to be included')) {
+            if (label.includes('close') || label.includes('dismiss') || label.includes('✕') || label.includes('x') || label.includes('got it') || tid.includes('close') || tid.includes('dismiss') || b.querySelector('svg')) {
+              try { b.click(); } catch(e){}
+            }
+          }
+        }
+      }
+
+      // 2. Only hide strict leaf toast containers - NEVER high-level wrapper divs or anything containing media!
+      const toastContainers = Array.from(document.querySelectorAll(
+        '[role="alert"], [role="dialog"], [role="status"], [data-tid*="notification-banner"], [data-tid*="recording-notification"], [data-tid*="toast"], .ts-toast-notification, .ui-toast, .fui-Toast'
+      ));
+
+      for (const el of toastContainers) {
+        // ABSOLUTE SAFETY: Never hide containers holding video, canvas, or presentation stage
+        if (el.querySelector('video, canvas, [data-tid="video-gallery"], [data-tid="meeting-canvas"], [data-tid="calling-roster-stage"], [data-tid="presentation-stage"], [data-tid*="screen-share"], [data-tid*="sharing"]')) {
+          continue;
+        }
+
+        const rect = el.getBoundingClientRect();
+        // Toast notifications are small popups, never fullscreen containers
+        if (rect.width > 650 || rect.height > 250) {
+          continue;
+        }
+
         const text = (el.innerText || el.textContent || '').toLowerCase();
         if (
           text.includes('recording has started') ||
           text.includes('recording started') ||
-          text.includes('privacy policy') ||
           text.includes('transcription has started') ||
           text.includes('you must agree to be included') ||
-          text.includes('started by')
+          text.includes('privacy policy')
         ) {
-          const closeBtn = Array.from(el.querySelectorAll('button, [role="button"], [aria-label]')).find(b => {
-            const label = ((b.getAttribute('aria-label') || '') + ' ' + (b.getAttribute('title') || '') + ' ' + (b.textContent || '')).toLowerCase();
-            return label.includes('close') || label.includes('dismiss') || label.includes('✕') || label.includes('x') || b.querySelector('svg');
-          }) || el.querySelector('button');
-
-          if (closeBtn) {
-            try { closeBtn.click(); } catch(e) {}
-          }
-
           el.style.setProperty('display', 'none', 'important');
           el.style.setProperty('visibility', 'hidden', 'important');
           el.style.setProperty('opacity', '0', 'important');
           el.style.setProperty('pointer-events', 'none', 'important');
           el.style.setProperty('height', '0px', 'important');
-          el.style.setProperty('min-height', '0px', 'important');
-          el.style.setProperty('max-height', '0px', 'important');
-          el.style.setProperty('margin', '0px', 'important');
-          el.style.setProperty('padding', '0px', 'important');
         }
       }
 
+      // 3. Inject CSS using textContent (to comply with Trusted Types / TrustedHTML)
       if (!document.getElementById('anti-recording-toast-style')) {
         const style = document.createElement('style');
         style.id = 'anti-recording-toast-style';
-        style.innerHTML = `
-          [data-tid*="notification-banner"],
-          [data-tid*="recording-notification"],
-          [data-tid*="toast"],
-          .ts-toast-notification,
-          .ui-toast {
+        style.textContent = `
+          [data-tid*="notification-banner"]:not(:has(video)):not(:has(canvas)),
+          [data-tid*="recording-notification"]:not(:has(video)):not(:has(canvas)),
+          [data-tid*="toast"]:not(:has(video)):not(:has(canvas)),
+          .ts-toast-notification:not(:has(video)):not(:has(canvas)),
+          .ui-toast:not(:has(video)):not(:has(canvas)) {
             display: none !important;
             visibility: hidden !important;
             opacity: 0 !important;
@@ -763,7 +781,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
           await frame.evaluate(() => {
             const style = document.createElement('style');
             style.id = 'bot-hider-style';
-            style.innerHTML = `
+            style.textContent = `
     * { cursor: none !important; }
     
     /* Explicitly protect video stage and canvas from ever being hidden */
