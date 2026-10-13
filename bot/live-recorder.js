@@ -356,14 +356,22 @@ async function dismissRecordingNotifications(page) {
             const r = el.getBoundingClientRect();
             if (r.width > 0 && r.width <= 650 && r.height > 0 && r.height <= 320) {
               const txt = (el.innerText || el.textContent || '').toLowerCase();
-              if (txt.includes('recording has started') || txt.includes('recording started') || txt.includes('agree to be included')) {
+              if (
+                txt.includes('recording has started') ||
+                txt.includes('recording started') ||
+                txt.includes('agree to be included') ||
+                txt.includes('transcription has started')
+              ) {
                 const closeBtn = el.querySelector('button, [role="button"]');
                 if (closeBtn) { try { closeBtn.click(); } catch(e){} }
                 el.style.setProperty('display', 'none', 'important');
                 el.style.setProperty('visibility', 'hidden', 'important');
                 el.style.setProperty('opacity', '0', 'important');
                 el.style.setProperty('pointer-events', 'none', 'important');
+                el.style.setProperty('position', 'absolute', 'important');
                 el.style.setProperty('left', '-9999px', 'important');
+                el.style.setProperty('height', '0px', 'important');
+                el.style.setProperty('width', '0px', 'important');
               }
             }
           }
