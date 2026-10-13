@@ -533,57 +533,42 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             }
         } catch (e) {}
 
-        // Ensure mic is muted
+        // Ensure camera is OFF
         try {
-            console.log('[DEBUG] Checking if Mic is ON on prejoin...');
-            const isMicOn = await page.evaluate(() => {
-                const micInput = document.querySelector('input[data-tid="toggle-mute"]');
-                if (micInput) {
-                    const dataCid = micInput.getAttribute('data-cid') || '';
-                    const isChecked = micInput.checked;
-                    return dataCid === 'toggle-mute-true' || isChecked === true;
-                }
-                const micBtns = Array.from(document.querySelectorAll('*')).filter(el => 
-                    el.getAttribute('aria-label') && el.getAttribute('aria-label').toLowerCase().includes('mic')
-                );
-                return false;
-            });
-            if (isMicOn) {
-                console.log('[DEBUG] Mic is ON on prejoin, clicking to mute...');
-                await page.evaluate(() => {
-                    const micInput = document.querySelector('input[data-tid="toggle-mute"]');
-                    if (micInput) {
-                        micInput.click();
-                    } else {
-                        const btn = document.querySelector('[data-tid="toggle-mute"], button[aria-label*="Mute"], button[aria-label*="mic" i]');
-                        if (btn) btn.click();
-                    }
-                });
-                await page.waitForTimeout(1000);
-            } else {
-                console.log('[DEBUG] Mic already muted on prejoin.');
-            }
-        } catch(e) {
-            console.log('[DEBUG] Mic toggle error on prejoin', e.message);
-        }
-
-        // Ensure camera is off
-        try {
-            console.log('[DEBUG] Searching for Camera toggle on prejoin...');
+            console.log('[DEBUG] Turning off Camera on prejoin...');
             await page.evaluate(() => {
-                const camBtns = Array.from(document.querySelectorAll('*')).filter(el => 
-                    (el.getAttribute('data-tid') === 'toggle-video') ||
-                    (el.getAttribute('aria-label') && (el.getAttribute('aria-label').toLowerCase().includes('camera') || el.getAttribute('aria-label').toLowerCase().includes('video')))
-                );
-                for (let btn of camBtns) {
-                    if (btn.getAttribute('aria-checked') === 'true' || btn.getAttribute('data-state') === 'unmuted') {
-                        btn.click();
+                const camInput = document.querySelector('input[data-tid="toggle-video"]');
+                if (camInput && camInput.checked) {
+                    camInput.click();
+                } else {
+                    const camWrapper = document.querySelector('[data-tid="toggle-video"], button[aria-label*="camera" i], button[aria-label*="video" i]');
+                    if (camWrapper && (camWrapper.getAttribute('aria-checked') === 'true' || camWrapper.checked)) {
+                        camWrapper.click();
                     }
                 }
             });
             await page.waitForTimeout(1000);
         } catch(e) {
             console.log('[DEBUG] Cam toggle error on prejoin', e.message);
+        }
+
+        // Ensure mic is MUTED
+        try {
+            console.log('[DEBUG] Turning off Mic on prejoin...');
+            await page.evaluate(() => {
+                const micInput = document.querySelector('input[data-tid="toggle-mute"]');
+                if (micInput && micInput.checked) {
+                    micInput.click();
+                } else {
+                    const micWrapper = document.querySelector('[data-tid="toggle-mute"], button[aria-label*="mic" i], button[aria-label*="mute" i]');
+                    if (micWrapper && (micWrapper.getAttribute('aria-checked') === 'true' || micWrapper.checked)) {
+                        micWrapper.click();
+                    }
+                }
+            });
+            await page.waitForTimeout(1000);
+        } catch(e) {
+            console.log('[DEBUG] Mic toggle error on prejoin', e.message);
         }
 
         console.log('[DEBUG] Clicking "Join now"');
