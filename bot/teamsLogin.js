@@ -121,12 +121,25 @@ async function doTeamsLogin(db) {
             }
         } catch(e) {}
 
-        // Wait for Teams web app to finish initializing on teams.cloud.microsoft / v2
+        // Wait for Teams web app to finish initializing on teams.microsoft.com/v2 or teams.cloud.microsoft
         console.log("Waiting for Teams Web app to finish loading...");
         try {
-            await page.waitForURL(url => url.href.includes('teams.cloud.microsoft') || url.href.includes('/v2/') || url.href.includes('teams.microsoft.com'), { timeout: 15000 });
-            await page.waitForTimeout(5000);
+            await page.waitForURL(url => url.href.includes('teams.cloud.microsoft') || url.href.includes('/v2/') || url.href.includes('teams.microsoft.com'), { timeout: 20000 });
         } catch(e) {}
+        
+        // Explicitly navigate to Teams Web Home if not already there, ensuring all authentication tokens & service cookies are set
+        try {
+            const curUrl = page.url();
+            if (!curUrl.includes('/v2/') && !curUrl.includes('teams.cloud.microsoft')) {
+                console.log("Navigating to Teams v2 web client to initialize full app session...");
+                await page.goto('https://teams.microsoft.com/v2/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+                await page.waitForTimeout(6000);
+            } else {
+                await page.waitForTimeout(5000);
+            }
+        } catch(e) {
+            console.log("Navigation to /v2/ note:", e.message);
+        }
 
         console.log("Validating successful login...");
         // Ensure we are not still on the login page
@@ -136,9 +149,12 @@ async function doTeamsLogin(db) {
         console.log("Login seems successful, extracting cookies...");
         const cookies = await context.cookies();
         
-        await db.ref(`config/${targetKey}`).update({ cookies: cookies });
+        await db.ref(`config/${targetKey}`).update({ 
+            cookies: cookies,
+            updatedAt: Date.now()
+        });
         await db.ref('state/login_status').set('SUCCESS');
-        console.log("Cookies saved to Firebase!");
+        console.log(`Saved ${cookies.length} cookies to Firebase for ${targetKey}!`);
 
     } catch (err) {
         console.error("Login failed:", err);

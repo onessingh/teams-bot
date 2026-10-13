@@ -64,60 +64,144 @@ async function performInlineLogin(page, creds) {
   }
   console.log('[DEBUG] Performing inline login for:', creds.email);
   try {
-    const signInBtn = page.locator('button[data-tid="prejoin-signin-button"], a:has-text("Sign in"), button:has-text("Sign in"), button:has-text("Sign in to join")').first();
-    if (await signInBtn.isVisible({ timeout: 3000 })) {
-      console.log('[DEBUG] Clicking Sign in button on prejoin...');
-      await signInBtn.click({ force: true });
-      await page.waitForTimeout(4000);
+    // 1. Dhoondho sign-in button ko main page aur all iframes me
+    let clickedSignIn = false;
+    const signInSelectors = [
+      'button[data-tid="prejoin-signin-button"]',
+      'button[data-tid*="signin"]',
+      'button[data-tid*="sign-in"]',
+      'a[data-tid*="signin"]',
+      'button:has-text("Sign in")',
+      'a:has-text("Sign in")',
+      'button:has-text("Sign in to join")',
+      'span:has-text("Sign in")'
+    ];
+
+    for (const frame of [page, ...page.frames()]) {
+      for (const sel of signInSelectors) {
+        try {
+          const btn = frame.locator(sel).first();
+          if (await btn.isVisible({ timeout: 1000 })) {
+            console.log(`[DEBUG] Found Sign in button with selector '${sel}' in frame ${frame.url()}. Clicking...`);
+            await btn.click({ force: true });
+            clickedSignIn = true;
+            break;
+          }
+        } catch(e){}
+      }
+      if (clickedSignIn) break;
     }
 
+    await page.waitForTimeout(4000);
+
+    // 2. Identify target page (agar popup window khula ho)
     let targetPage = page;
     const context = page.context();
     for (const p of context.pages()) {
-      if (p !== page && (p.url().includes('login.') || p.url().includes('microsoft'))) {
+      const u = p.url().toLowerCase();
+      if (p !== page && (u.includes('login.') || u.includes('microsoft') || u.includes('live.com'))) {
         targetPage = p;
+        console.log('[DEBUG] Switch to login popup window:', targetPage.url());
         break;
       }
     }
 
-    const emailInput = targetPage.locator('input[type="email"], input[name="loginfmt"]').first();
-    if (await emailInput.isVisible({ timeout: 7000 })) {
-      console.log('[DEBUG] Entering email...');
-      await emailInput.fill(creds.email);
+    // Helper to find input in targetPage or its frames
+    async function findInputInPageOrFrames(p, selectors) {
+      for (const frame of [p, ...p.frames()]) {
+        for (const sel of selectors) {
+          try {
+            const loc = frame.locator(sel).first();
+            if (await loc.isVisible({ timeout: 1500 })) {
+              return { frame, loc, sel };
+            }
+          } catch(e){}
+        }
+      }
+      return null;
+    }
+
+    // 3. Email Input
+    const emailSelectors = [
+      'input[type="email"]',
+      'input[name="loginfmt"]',
+      'input[name="login"]',
+      '#i0116',
+      'input[placeholder*="email" i]',
+      'input[placeholder*="phone" i]'
+    ];
+
+    let emailFound = await findInputInPageOrFrames(targetPage, emailSelectors);
+    if (!emailFound && targetPage !== page) {
+      emailFound = await findInputInPageOrFrames(page, emailSelectors);
+      if (emailFound) targetPage = page;
+    }
+
+    if (emailFound) {
+      console.log(`[DEBUG] Found email input (${emailFound.sel}). Entering email...`);
+      await emailFound.loc.focus();
+      await emailFound.loc.fill(creds.email);
       await targetPage.waitForTimeout(500);
       await targetPage.keyboard.press('Enter');
       await targetPage.waitForTimeout(2000);
-      try { await targetPage.click('#idSIButton9, input[type="submit"]', { timeout: 2000, force: true }); } catch(e){}
+      try {
+        await targetPage.click('#idSIButton9, input[type="submit"], button:has-text("Next")', { timeout: 2000, force: true });
+      } catch(e){}
     } else {
       console.log('[DEBUG] ⚠️ Email input not found during inline login.');
       return false;
     }
 
+    // 4. Check for password switch/bypass
+    await targetPage.waitForTimeout(2000);
     try {
-      const bypass = targetPage.locator('#idA_PWD_SwitchToPassword, #idA_PWD_SwitchToCredPicker').first();
-      if (await bypass.isVisible({ timeout: 3000 })) {
-        console.log('[DEBUG] Clicking "Use your password" bypass...');
-        await bypass.click({ force: true });
-        await targetPage.waitForTimeout(2000);
+      const bypassSelectors = [
+        '#idA_PWD_SwitchToPassword',
+        '#idA_PWD_SwitchToCredPicker',
+        'a:has-text("Use your password")',
+        'button:has-text("Use your password")'
+      ];
+      for (const sel of bypassSelectors) {
+        const bypass = targetPage.locator(sel).first();
+        if (await bypass.isVisible({ timeout: 1500 })) {
+          console.log(`[DEBUG] Clicking bypass button (${sel})...`);
+          await bypass.click({ force: true });
+          await targetPage.waitForTimeout(2000);
+          break;
+        }
       }
     } catch(e){}
 
-    const pwdInput = targetPage.locator('input[type="password"], input[name="passwd"]').first();
-    if (await pwdInput.isVisible({ timeout: 10000 })) {
-      console.log('[DEBUG] Entering password...');
-      await pwdInput.fill(creds.password);
+    // 5. Password Input
+    const pwdSelectors = [
+      'input[type="password"]',
+      'input[name="passwd"]',
+      '#i0118',
+      'input[placeholder*="password" i]'
+    ];
+
+    let pwdFound = await findInputInPageOrFrames(targetPage, pwdSelectors);
+    if (pwdFound) {
+      console.log(`[DEBUG] Found password input (${pwdFound.sel}). Entering password...`);
+      await pwdFound.loc.focus();
+      await pwdFound.loc.fill(creds.password);
       await targetPage.waitForTimeout(500);
       await targetPage.keyboard.press('Enter');
       await targetPage.waitForTimeout(2000);
-      try { await targetPage.click('#idSIButton9, input[type="submit"]', { timeout: 2000, force: true }); } catch(e){}
+      try {
+        await targetPage.click('#idSIButton9, input[type="submit"], button:has-text("Sign in")', { timeout: 2000, force: true });
+      } catch(e){}
     } else {
       console.log('[DEBUG] ⚠️ Password input not found during inline login.');
       return false;
     }
 
+    // 6. 'Stay signed in?' prompt
     try {
-      const stayBtn = targetPage.locator('#idSIButton9, input[value="Yes"]').first();
-      if (await stayBtn.isVisible({ timeout: 3000 })) {
+      await targetPage.waitForTimeout(2000);
+      const stayBtn = targetPage.locator('#idSIButton9, input[value="Yes"], button:has-text("Yes")').first();
+      if (await stayBtn.isVisible({ timeout: 4000 })) {
+        console.log('[DEBUG] Clicking "Yes" on Stay signed in prompt...');
         await stayBtn.click({ force: true });
         await targetPage.waitForTimeout(3000);
       }
@@ -551,6 +635,11 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                 return 'error_screen';
             }
             
+            // Check for explicit denial
+            if (lowerText.includes('denied access to the meeting') || lowerText.includes('you were denied') || lowerText.includes('removed from the meeting')) {
+                return 'denied';
+            }
+
             // Check for instant drop/kick
             if (lowerText.includes('rejoin') || lowerText.includes('returning to teams meetings') || lowerText.includes('did you leave by mistake')) {
                 return 'dropped';
@@ -561,6 +650,9 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         
         if (isAdmitted === true) {
             admitted = true;
+            break;
+        } else if (isAdmitted === 'denied') {
+            console.log('[DEBUG] ❌ Organizer explicitly denied access to the meeting. Exiting lobby wait loop.');
             break;
         } else if (isAdmitted === 'stuck_prejoin') {
             stuckPrejoinCount++;
