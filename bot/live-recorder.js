@@ -689,6 +689,24 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             console.log('[DEBUG] Call dropped immediately upon joining (Rejoin screen detected). Exiting early.');
             break; // will fall through to !admitted check and exit
         }
+        // Check if lobby asks for student email verification ("Enter your email or phone number")
+        try {
+            const lobbyEmailInput = page.locator('input[placeholder*="email" i], input[type="email"], input[aria-label*="email" i]').first();
+            if (options.creds && options.creds.email && await lobbyEmailInput.isVisible({ timeout: 1500 })) {
+                console.log(`[DEBUG] Found email verification input in lobby! Entering ${options.creds.email}...`);
+                await lobbyEmailInput.fill(options.creds.email);
+                await page.waitForTimeout(500);
+                const nextBtn = page.locator('button:has-text("Next"), input[value="Next"], button[type="submit"]').first();
+                if (await nextBtn.isVisible({ timeout: 1500 })) {
+                    await nextBtn.click({ force: true });
+                    console.log('[DEBUG] Clicked Next on lobby email verification prompt.');
+                } else {
+                    await lobbyEmailInput.press('Enter');
+                }
+                await page.waitForTimeout(2000);
+            }
+        } catch(e) {}
+
         await page.waitForTimeout(15000);
         initLobbyWaitLoops++;
     }
