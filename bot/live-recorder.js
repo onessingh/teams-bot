@@ -396,11 +396,15 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
       ]
     });
 
-    const context = await browser.newContext({
+    const contextOptions = {
       viewport: null,
       permissions: ['microphone', 'camera'],
       colorScheme: 'dark'  // Force dark mode in Teams
-    });
+    };
+    if (options.creds && options.creds.storageState) {
+      contextOptions.storageState = options.creds.storageState;
+    }
+    const context = await browser.newContext(contextOptions);
 
     if (Array.isArray(cookies) && cookies.length) {
       const expandedCookies = [];
@@ -523,9 +527,9 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                     }
                 }
                 
-                // CRITICAL FALLBACK: If inline login failed or session cookies expired, fill Guest Name so Join now is enabled!
                 if (await nameInput.isVisible({ timeout: 2000 })) {
-                    const studentName = (options.creds && options.creds.name) ? options.creds.name : 'Raj Singh';
+                    const baseName = (options.creds && options.creds.name) ? options.creds.name : 'Raj Singh';
+                    const studentName = (options.creds && options.creds.email && !baseName.includes('@')) ? `${baseName} (${options.creds.email})` : baseName;
                     console.log(`[DEBUG] Filling student name ("${studentName}")...`);
                     await nameInput.fill(studentName);
                     await page.waitForTimeout(1000);

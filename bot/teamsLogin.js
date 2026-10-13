@@ -149,15 +149,20 @@ async function doTeamsLogin(db) {
         const isStillLogin = await page.locator('input[type="email"]').isVisible().catch(()=>false);
         if (isStillLogin) throw new Error("Stuck on email page. Incorrect email?");
         
-        console.log("Login seems successful, extracting cookies...");
+        console.log("Login seems successful, extracting cookies and storage state...");
         const cookies = await context.cookies();
+        let storageState = null;
+        try {
+            storageState = await context.storageState();
+        } catch(e) {}
         
         await db.ref(`config/${targetKey}`).update({ 
             cookies: cookies,
+            storageState: storageState,
             updatedAt: Date.now()
         });
         await db.ref('state/login_status').set('SUCCESS');
-        console.log(`Saved ${cookies.length} cookies to Firebase for ${targetKey}!`);
+        console.log(`Saved ${cookies.length} cookies and full storageState to Firebase for ${targetKey}!`);
 
     } catch (err) {
         console.error("Login failed:", err);
