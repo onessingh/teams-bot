@@ -294,74 +294,81 @@ async function dismissMigrationBanner(page) {
 async function dismissRecordingNotifications(page) {
   try {
     await page.evaluate(() => {
-      // 1. First, search and click explicit Dismiss/Close (X) buttons on the recording toast
-      const candidateButtons = Array.from(document.querySelectorAll('button, [role="button"], [aria-label]'));
-      for (const b of candidateButtons) {
-        const label = ((b.getAttribute('aria-label') || '') + ' ' + (b.getAttribute('title') || '') + ' ' + (b.innerText || '')).toLowerCase();
-        const tid = (b.getAttribute('data-tid') || '').toLowerCase();
-        
-        const toastBox = b.closest('[role="alert"], [role="dialog"], [role="status"], [data-tid*="notification"], [data-tid*="toast"], [data-tid*="banner"], [class*="toast"], [class*="banner"]');
-        if (toastBox) {
-          const boxText = (toastBox.innerText || toastBox.textContent || '').toLowerCase();
-          if (boxText.includes('recording') || boxText.includes('privacy policy') || boxText.includes('transcription') || boxText.includes('agree to be included')) {
-            if (label.includes('close') || label.includes('dismiss') || label.includes('✕') || label.includes('x') || label.includes('got it') || tid.includes('close') || tid.includes('dismiss') || b.querySelector('svg')) {
-              try { b.click(); } catch(e){}
-            }
-          }
-        }
-      }
-
-      // 2. Only hide strict leaf toast containers - NEVER high-level wrapper divs or anything containing media!
-      const toastContainers = Array.from(document.querySelectorAll(
-        '[role="alert"], [role="dialog"], [role="status"], [data-tid*="notification-banner"], [data-tid*="recording-notification"], [data-tid*="toast"], .ts-toast-notification, .ui-toast, .fui-Toast'
-      ));
-
-      for (const el of toastContainers) {
-        // ABSOLUTE SAFETY: Never hide containers holding video, canvas, or presentation stage
+      // 1. Text-based detection: Find any small container containing "recording has started" or "agree to be included"
+      const candidateElements = Array.from(document.querySelectorAll('div, section, aside, [role="dialog"], [role="alert"], [role="status"]'));
+      for (const el of candidateElements) {
+        // Absolute safety: NEVER touch wrappers containing video, canvas, or screenshare/stage
         if (el.querySelector('video, canvas, [data-tid="video-gallery"], [data-tid="meeting-canvas"], [data-tid="calling-roster-stage"], [data-tid="presentation-stage"], [data-tid*="screen-share"], [data-tid*="sharing"]')) {
           continue;
         }
 
         const rect = el.getBoundingClientRect();
-        // Toast notifications are small popups, never fullscreen containers
-        if (rect.width > 650 || rect.height > 250) {
-          continue;
-        }
+        // The recording popup is a small card (width <= 650, height <= 320)
+        if (rect.width > 0 && rect.width <= 650 && rect.height > 0 && rect.height <= 320) {
+          const text = (el.innerText || el.textContent || '').toLowerCase();
+          if (
+            text.includes('recording has started') ||
+            text.includes('recording started') ||
+            text.includes('agree to be included') ||
+            text.includes('transcription has started')
+          ) {
+            // Find and click close (X) button inside the card
+            const btns = Array.from(el.querySelectorAll('button, [role="button"], svg, i'));
+            for (const b of btns) {
+              const label = ((b.getAttribute('aria-label') || '') + ' ' + (b.getAttribute('title') || '') + ' ' + (b.innerText || '')).toLowerCase();
+              if (label.includes('close') || label.includes('dismiss') || label.includes('✕') || label.includes('x') || label.includes('got it') || b.tagName === 'SVG' || b.querySelector('svg')) {
+                try { b.click(); } catch(e){}
+              }
+            }
 
-        const text = (el.innerText || el.textContent || '').toLowerCase();
-        if (
-          text.includes('recording has started') ||
-          text.includes('recording started') ||
-          text.includes('transcription has started') ||
-          text.includes('you must agree to be included') ||
-          text.includes('privacy policy')
-        ) {
-          el.style.setProperty('display', 'none', 'important');
-          el.style.setProperty('visibility', 'hidden', 'important');
-          el.style.setProperty('opacity', '0', 'important');
-          el.style.setProperty('pointer-events', 'none', 'important');
-          el.style.setProperty('height', '0px', 'important');
+            // Immediately nuke the container from the visual layout
+            el.style.setProperty('display', 'none', 'important');
+            el.style.setProperty('visibility', 'hidden', 'important');
+            el.style.setProperty('opacity', '0', 'important');
+            el.style.setProperty('pointer-events', 'none', 'important');
+            el.style.setProperty('position', 'absolute', 'important');
+            el.style.setProperty('left', '-9999px', 'important');
+            el.style.setProperty('height', '0px', 'important');
+            el.style.setProperty('width', '0px', 'important');
+          }
         }
       }
 
-      // 3. Inject CSS using textContent (to comply with Trusted Types / TrustedHTML)
-      if (!document.getElementById('anti-recording-toast-style')) {
-        const style = document.createElement('style');
-        style.id = 'anti-recording-toast-style';
-        style.textContent = `
-          [data-tid*="notification-banner"]:not(:has(video)):not(:has(canvas)),
-          [data-tid*="recording-notification"]:not(:has(video)):not(:has(canvas)),
-          [data-tid*="toast"]:not(:has(video)):not(:has(canvas)),
-          .ts-toast-notification:not(:has(video)):not(:has(canvas)),
-          .ui-toast:not(:has(video)):not(:has(canvas)) {
-            display: none !important;
-            visibility: hidden !important;
-            opacity: 0 !important;
-            height: 0 !important;
-            pointer-events: none !important;
+      // 2. Also search for any floating close button whose parent mentions recording
+      const allButtons = Array.from(document.querySelectorAll('button, [role="button"]'));
+      for (const b of allButtons) {
+        const label = ((b.getAttribute('aria-label') || '') + ' ' + (b.getAttribute('title') || '') + ' ' + (b.innerText || '')).toLowerCase();
+        if (label.includes('close') || label.includes('dismiss') || label.includes('got it') || label === '✕' || label === 'x') {
+          const parentText = (b.parentElement ? (b.parentElement.innerText || b.parentElement.textContent || '') : '').toLowerCase();
+          if (parentText.includes('recording') || parentText.includes('privacy policy') || parentText.includes('transcription') || parentText.includes('agree to be included')) {
+            try { b.click(); } catch(e){}
           }
-        `;
-        document.head.appendChild(style);
+        }
+      }
+
+      // 3. Inject continuous MutationObserver so newly appeared recording popups are nuked in real time
+      if (!window.__antiRecordingObserverInstalled) {
+        window.__antiRecordingObserverInstalled = true;
+        const observer = new MutationObserver(() => {
+          const elements = Array.from(document.querySelectorAll('div, section, aside, [role="dialog"], [role="alert"]'));
+          for (const el of elements) {
+            if (el.querySelector('video, canvas, [data-tid="video-gallery"], [data-tid="meeting-canvas"], [data-tid="presentation-stage"]')) continue;
+            const r = el.getBoundingClientRect();
+            if (r.width > 0 && r.width <= 650 && r.height > 0 && r.height <= 320) {
+              const txt = (el.innerText || el.textContent || '').toLowerCase();
+              if (txt.includes('recording has started') || txt.includes('recording started') || txt.includes('agree to be included')) {
+                const closeBtn = el.querySelector('button, [role="button"]');
+                if (closeBtn) { try { closeBtn.click(); } catch(e){} }
+                el.style.setProperty('display', 'none', 'important');
+                el.style.setProperty('visibility', 'hidden', 'important');
+                el.style.setProperty('opacity', '0', 'important');
+                el.style.setProperty('pointer-events', 'none', 'important');
+                el.style.setProperty('left', '-9999px', 'important');
+              }
+            }
+          }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
       }
     });
   } catch(e) {}
