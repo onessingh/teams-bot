@@ -84,6 +84,9 @@ async function doTeamsLogin(db) {
             try {
                 await page.click('#idSIButton9, input[type="submit"]', { timeout: 2000, force: true });
             } catch(e) {}
+
+            // Wait for password submission to process
+            await page.waitForTimeout(3000);
         } catch(e) {
             console.log("Login flow failed:", e.message);
             console.log("Saving screenshot for debugging.");
@@ -96,7 +99,7 @@ async function doTeamsLogin(db) {
         // Check for MFA screen (e.g. Authenticator App prompt)
         console.log("Checking for MFA...");
         try {
-            await page.waitForSelector('#idRemoteNGC_DisplaySign', { timeout: 5000 });
+            await page.waitForSelector('#idRemoteNGC_DisplaySign, #idRichContext_DisplaySign', { timeout: 4000 });
             console.log("MFA Prompt detected!");
             
             const screenshotBuffer = await page.screenshot({ fullPage: false });
@@ -113,32 +116,32 @@ async function doTeamsLogin(db) {
         // 'Stay signed in?' prompt - CLICK YES TO GET PERSISTENT REFRESH COOKIES!
         try {
             console.log("Checking for 'Stay signed in?' prompt...");
-            const staySignedBtn = page.locator('#idSIButton9, input[value="Yes"], input[type="submit"][value="Yes"]').first();
+            const staySignedBtn = page.locator('#idSIButton9, input[value="Yes"], button:has-text("Yes"), input[type="submit"][value="Yes"]').first();
             if (await staySignedBtn.isVisible({ timeout: 5000 })) {
                 console.log("Clicking 'Yes' on Stay signed in prompt to get persistent auth cookies...");
                 await staySignedBtn.click({ force: true });
-                await page.waitForTimeout(4000);
+                await page.waitForTimeout(5000);
             }
         } catch(e) {}
 
-        // Wait for Teams web app to finish initializing on teams.microsoft.com/v2 or teams.cloud.microsoft
-        console.log("Waiting for Teams Web app to finish loading...");
+        // Wait for login redirection to finish (wait until URL leaves login.live.com / login.microsoftonline.com)
+        console.log("Waiting for Microsoft login redirect to complete...");
         try {
-            await page.waitForURL(url => url.href.includes('teams.cloud.microsoft') || url.href.includes('/v2/') || url.href.includes('teams.microsoft.com'), { timeout: 20000 });
-        } catch(e) {}
-        
-        // Explicitly navigate to Teams Web Home if not already there, ensuring all authentication tokens & service cookies are set
-        try {
-            const curUrl = page.url();
-            if (!curUrl.includes('/v2/') && !curUrl.includes('teams.cloud.microsoft')) {
-                console.log("Navigating to Teams v2 web client to initialize full app session...");
-                await page.goto('https://teams.microsoft.com/v2/', { waitUntil: 'domcontentloaded', timeout: 30000 });
-                await page.waitForTimeout(6000);
-            } else {
-                await page.waitForTimeout(5000);
-            }
+            await page.waitForURL(url => !url.href.includes('login.live.com') && !url.href.includes('login.microsoftonline.com'), { timeout: 15000 });
         } catch(e) {
-            console.log("Navigation to /v2/ note:", e.message);
+            console.log("Redirect wait note (continuing):", e.message);
+        }
+
+        // Wait for Teams web app to finish initializing
+        console.log("Current URL after login:", page.url());
+        try {
+            if (!page.url().includes('teams.microsoft.com') && !page.url().includes('teams.cloud.microsoft')) {
+                console.log("Navigating to Teams v2 web client...");
+                await page.goto('https://teams.microsoft.com/v2/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+            }
+            await page.waitForTimeout(6000);
+        } catch(e) {
+            console.log("Navigation to Teams note:", e.message);
         }
 
         console.log("Validating successful login...");
