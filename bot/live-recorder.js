@@ -525,8 +525,8 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                 
                 // CRITICAL FALLBACK: If inline login failed or session cookies expired, fill Guest Name so Join now is enabled!
                 if (await nameInput.isVisible({ timeout: 2000 })) {
-                    console.log('[DEBUG] ⚠️ Guest input still visible! Filling student name fallback ("Raj Thakur")...');
-                    const studentName = (options.creds && options.creds.name) ? options.creds.name : 'Raj Thakur';
+                    const studentName = (options.creds && options.creds.name) ? options.creds.name : 'Raj Singh';
+                    console.log(`[DEBUG] Filling student name ("${studentName}")...`);
                     await nameInput.fill(studentName);
                     await page.waitForTimeout(1000);
                 }
@@ -571,9 +571,22 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             console.log('[DEBUG] Mic toggle error on prejoin', e.message);
         }
 
-        console.log('[DEBUG] Clicking "Join now"');
+        console.log('[DEBUG] Clicking "Join now" with pointer event dispatch...');
+        await page.evaluate(() => {
+            const btn = document.getElementById('prejoin-join-button') || document.querySelector('button[data-tid="prejoin-join-button"], button[data-tid="join-button"]');
+            if (btn) {
+                btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
+                btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                btn.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true }));
+                btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+                btn.click();
+            }
+        });
+
         const joinBtn = page.locator('button[data-tid="prejoin-join-button"], button[data-tid="join-button"], button:has-text("Join now")').first();
-        await joinBtn.click({ timeout: 10000, force: true });
+        try {
+            await joinBtn.click({ timeout: 5000, force: true });
+        } catch(e) {}
         
         await page.waitForTimeout(2000);
         if (await joinBtn.isVisible()) {
