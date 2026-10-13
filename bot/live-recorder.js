@@ -529,7 +529,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                 
                 if (await nameInput.isVisible({ timeout: 2000 })) {
                     const baseName = (options.creds && options.creds.name) ? options.creds.name : 'Raj Singh';
-                    const studentName = (options.creds && options.creds.email && !baseName.includes('@')) ? `${baseName} (${options.creds.email})` : baseName;
+                    const studentName = (options.creds && options.creds.email && !baseName.includes('@')) ? `${baseName} - ${options.creds.email}` : baseName;
                     console.log(`[DEBUG] Filling student name ("${studentName}")...`);
                     await nameInput.fill(studentName);
                     await page.waitForTimeout(1000);
