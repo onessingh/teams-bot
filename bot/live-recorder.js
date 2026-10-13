@@ -217,32 +217,40 @@ async function performInlineLogin(page, creds) {
 
 // ---------- HELPERS ----------
 async function isMeetingFullView(page) {
-  return page.evaluate(() => {
-    const stage = document.querySelector(
-      '[data-tid="calling-roster-stage"], [data-tid="video-gallery"], [data-tid="meeting-canvas"]'
-    );
-    if (stage && stage.getBoundingClientRect().width > 600) return true;
-    const tb = document.querySelector('[data-tid="meeting-toolbar"]');
-    return !!(tb && tb.getBoundingClientRect().width > 600);
-  });
+  try {
+    return await page.evaluate(() => {
+      const stage = document.querySelector(
+        '[data-tid="calling-roster-stage"], [data-tid="video-gallery"], [data-tid="meeting-canvas"]'
+      );
+      if (stage && stage.getBoundingClientRect().width > 600) return true;
+      const tb = document.querySelector('[data-tid="meeting-toolbar"]');
+      return !!(tb && tb.getBoundingClientRect().width > 600);
+    });
+  } catch (e) {
+    return false;
+  }
 }
 
 // Mini call popup = chhota fixed/absolute box jisme timer (mm:ss) + 3+ buttons hon.
 // Sabse chhota match return karte hain taaki galat bada container na pakde.
 async function findPipRect(page) {
-  return page.evaluate(() => {
-    const matches = [];
-    for (const el of document.querySelectorAll('div, section')) {
-      const r = el.getBoundingClientRect();
-      if (r.width < 150 || r.width > 450 || r.height < 80 || r.height > 300) continue;
-      const pos = getComputedStyle(el).position;
-      if (pos !== 'fixed' && pos !== 'absolute') continue;
-      if (!/\b\d{1,2}:\d{2}\b/.test(el.innerText || '')) continue;
-      if (el.querySelectorAll('button').length < 3) continue;
-      matches.push({ x: r.x, y: r.y, w: r.width, h: r.height, html: el.outerHTML.slice(0, 1500) });
-    }
-    return matches[0] || null;
-  });
+  try {
+    return await page.evaluate(() => {
+      const matches = [];
+      for (const el of document.querySelectorAll('div, section')) {
+        const r = el.getBoundingClientRect();
+        if (r.width < 150 || r.width > 450 || r.height < 80 || r.height > 300) continue;
+        const pos = getComputedStyle(el).position;
+        if (pos !== 'fixed' && pos !== 'absolute') continue;
+        if (!/\b\d{1,2}:\d{2}\b/.test(el.innerText || '')) continue;
+        if (el.querySelectorAll('button').length < 3) continue;
+        matches.push({ x: r.x, y: r.y, w: r.width, h: r.height, html: el.outerHTML.slice(0, 1500) });
+      }
+      return matches[0] || null;
+    });
+  } catch (e) {
+    return null;
+  }
 }
 
 // Migration banner ("Same app, better security") ko safely hide karta hai without clicking "Learn more" links.
@@ -601,52 +609,59 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     let stuckPrejoinCount = 0;
     let admitted = false;
     while (!admitted && initLobbyWaitLoops < 120) { 
-        // Wait in lobby (up to 30 mins)
-        const isAdmitted = await page.evaluate(() => {
-            const text = document.body.innerText || '';
-            console.log('[DEBUG-DUMP] Lobby screen text:', text.replace(/\n/g, ' | '));
-            
-            const lowerText = text.toLowerCase();
+        let isAdmitted = false;
+        try {
+            isAdmitted = await page.evaluate(() => {
+                const text = document.body.innerText || '';
+                console.log('[DEBUG-DUMP] Lobby screen text:', text.replace(/\n/g, ' | '));
+                
+                const lowerText = text.toLowerCase();
 
-            // Check if stuck on guest pre-join screen ("Type your name", "Enter a name to join")
-            if (lowerText.includes('enter a name to join') || lowerText.includes('type your name')) {
-                return 'stuck_prejoin';
-            }
-            
-            // DEFINITE lobby indicators
-            const hardLobby = lowerText.includes('someone will let you in') || 
-                              lowerText.includes('we\'ve let people in the meeting know you\'re waiting') ||
-                              lowerText.includes('when the meeting starts, we\'ll let people know') ||
-                              lowerText.includes('hi, raj. someone will let you in');
-            if (hardLobby) return false;
-            
-            // If we can see a running timer (format mm:ss like 00:26, 01:41) AND a Leave button, we are IN
-            const hasTimer = /(?:\d{2}:\d{2}|--:--)/.test(text);
-            const hasLeaveBtn = !!document.querySelector('[data-tid="hang-up-btn"], [data-tid="leave-button"], [data-tid="call-hangup"]') ||
-                                lowerText.includes('leave');
-            if (hasTimer && hasLeaveBtn) return true;
-            
-            // Also check for video gallery
-            const hasVideoGallery = !!document.querySelector('[data-tid="video-gallery"], [data-tid="calling-roster-stage"]');
-            if (hasVideoGallery) return true;
-            
-            // Check for transient error screen ("We ran into a problem")
-            if (lowerText.includes('we ran into a problem') || lowerText.includes('try again in a few minutes') || lowerText.includes('something went wrong')) {
-                return 'error_screen';
-            }
-            
-            // Check for explicit denial
-            if (lowerText.includes('denied access to the meeting') || lowerText.includes('you were denied') || lowerText.includes('removed from the meeting')) {
-                return 'denied';
-            }
+                // Check if stuck on guest pre-join screen ("Type your name", "Enter a name to join")
+                if (lowerText.includes('enter a name to join') || lowerText.includes('type your name')) {
+                    return 'stuck_prejoin';
+                }
+                
+                // DEFINITE lobby indicators
+                const hardLobby = lowerText.includes('someone will let you in') || 
+                                  lowerText.includes('we\'ve let people in the meeting know you\'re waiting') ||
+                                  lowerText.includes('when the meeting starts, we\'ll let people know') ||
+                                  lowerText.includes('hi, raj. someone will let you in');
+                if (hardLobby) return false;
+                
+                // If we can see a running timer (format mm:ss like 00:26, 01:41) AND a Leave button, we are IN
+                const hasTimer = /(?:\d{2}:\d{2}|--:--)/.test(text);
+                const hasLeaveBtn = !!document.querySelector('[data-tid="hang-up-btn"], [data-tid="leave-button"], [data-tid="call-hangup"]') ||
+                                    lowerText.includes('leave');
+                if (hasTimer && hasLeaveBtn) return true;
+                
+                // Also check for video gallery
+                const hasVideoGallery = !!document.querySelector('[data-tid="video-gallery"], [data-tid="calling-roster-stage"]');
+                if (hasVideoGallery) return true;
+                
+                // Check for transient error screen ("We ran into a problem")
+                if (lowerText.includes('we ran into a problem') || lowerText.includes('try again in a few minutes') || lowerText.includes('something went wrong')) {
+                    return 'error_screen';
+                }
+                
+                // Check for explicit denial
+                if (lowerText.includes('denied access to the meeting') || lowerText.includes('you were denied') || lowerText.includes('removed from the meeting')) {
+                    return 'denied';
+                }
 
-            // Check for instant drop/kick
-            if (lowerText.includes('rejoin') || lowerText.includes('returning to teams meetings') || lowerText.includes('did you leave by mistake')) {
-                return 'dropped';
-            }
-            
-            return false;
-        });
+                // Check for instant drop/kick
+                if (lowerText.includes('rejoin') || lowerText.includes('returning to teams meetings') || lowerText.includes('did you leave by mistake')) {
+                    return 'dropped';
+                }
+                
+                return false;
+            });
+        } catch (evalErr) {
+            console.log('[DEBUG] Page evaluation during lobby wait caught error (navigation/transition in progress):', evalErr.message);
+            // Wait 3 seconds for the navigation/redirect to settle
+            await page.waitForTimeout(3000);
+            continue;
+        }
         
         if (isAdmitted === true) {
             admitted = true;
@@ -694,9 +709,9 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     }
 
     if (!admitted) {
-        console.log('[DEBUG] Lobby timeout reached (10 minutes) before recording started. Exiting.');
+        console.log('[DEBUG] Lobby timeout reached or admission denied before recording started. Exiting.');
         await browser.close();
-        return;
+        throw new Error('Meeting admission was not granted (Lobby timeout or denied by organizer).');
     }
     console.log('[DEBUG] Admitted to meeting. Setting up UI (Mic, Hide me, Full screen).');
     if (options.onStatus) await options.onStatus('ADMITTED_PREPARING_UI');
