@@ -417,7 +417,13 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
       colorScheme: 'dark'  // Force dark mode in Teams
     };
     if (options.creds && options.creds.storageState) {
-      contextOptions.storageState = options.creds.storageState;
+      try {
+        contextOptions.storageState = typeof options.creds.storageState === 'string'
+          ? JSON.parse(options.creds.storageState)
+          : options.creds.storageState;
+      } catch (err) {
+        console.error('[DEBUG] Failed to parse storageState JSON:', err.message);
+      }
     }
     const context = await browser.newContext(contextOptions);
 
