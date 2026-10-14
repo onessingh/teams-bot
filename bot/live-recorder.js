@@ -112,8 +112,10 @@ async function performInlineLogin(page, creds) {
         for (const sel of selectors) {
           try {
             const loc = frame.locator(sel).first();
-            if (await loc.isVisible({ timeout: 1500 })) {
-              return { frame, loc, sel };
+            const count = await loc.count();
+            if (count > 0) {
+              const visible = await loc.isVisible().catch(() => false);
+              return { frame, loc, sel, visible };
             }
           } catch(e){}
         }
@@ -157,9 +159,10 @@ async function performInlineLogin(page, creds) {
     const bypassSelectors = [
       '#idA_PWD_SwitchToPassword',
       '#idA_PWD_SwitchToCredPicker',
-      'a:has-text("Use your password")',
-      'button:has-text("Use your password")',
+      '[role="button"]:has-text("Use your password")',
       'span:has-text("Use your password")',
+      'button:has-text("Use your password")',
+      'a:has-text("Use your password")',
       'div:has-text("Use your password")'
     ];
 
@@ -197,6 +200,7 @@ async function performInlineLogin(page, creds) {
 
     // 5. Password Input (Poll across all pages and frames for up to 15 seconds)
     const pwdSelectors = [
+      '#passwordEntry',
       'input[type="password"]',
       'input[name="passwd"]',
       '#i0118',
@@ -219,13 +223,14 @@ async function performInlineLogin(page, creds) {
     if (pwdResult) {
       console.log(`[DEBUG] Found password input (${pwdResult.sel}) in frame. Entering password...`);
       const targetFrame = pwdResult.frame || targetPage;
+      await pwdResult.loc.scrollIntoViewIfNeeded().catch(() => {});
       await pwdResult.loc.focus();
       await pwdResult.loc.fill(creds.password);
       await targetPage.waitForTimeout(500);
       await pwdResult.loc.press('Enter');
       await targetPage.waitForTimeout(2000);
       try {
-        const submitBtn = targetFrame.locator('#idSIButton9, input[type="submit"], button:has-text("Sign in")').first();
+        const submitBtn = targetFrame.locator('#idSIButton9, input[type="submit"], button:has-text("Sign in"), button:has-text("Next")').first();
         if (await submitBtn.isVisible({ timeout: 2000 })) {
           await submitBtn.click({ force: true });
         }
