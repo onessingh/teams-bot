@@ -1569,7 +1569,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             // Also, if a real class happened earlier (peak >= 8 or teacher locked), exit in 45s!
             const hasClassActuallyHappened = (maxParticipants >= 8) || 
                                              (maxParticipants >= 5 && loopCount > 40) || 
-                                             (lockedTeacher !== null && loopCount > 20);
+                                             (Boolean(lockedTeacher) && loopCount > 20);
 
             const canExitAlone = (elapsedMins >= 30) || hasClassActuallyHappened;
 
