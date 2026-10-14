@@ -159,13 +159,14 @@ async function performInlineLogin(page, creds) {
       '#idA_PWD_SwitchToCredPicker',
       'a:has-text("Use your password")',
       'button:has-text("Use your password")',
-      'span:has-text("Use your password")'
+      'span:has-text("Use your password")',
+      'div:has-text("Use your password")'
     ];
 
-    // Wait up to 8s for bypass button or password field
-    for (let attempt = 0; attempt < 8; attempt++) {
+    // Wait up to 10s for bypass button
+    for (let attempt = 0; attempt < 10; attempt++) {
       let bypassClicked = false;
-      for (const p of [targetPage, page, ...targetPage.context().pages()]) {
+      for (const p of [targetPage, page, ...page.context().pages()]) {
         for (const frame of [p, ...p.frames()]) {
           for (const sel of bypassSelectors) {
             try {
@@ -173,7 +174,12 @@ async function performInlineLogin(page, creds) {
               if (await bypass.isVisible({ timeout: 500 })) {
                 console.log(`[DEBUG] Found bypass button (${sel}) in frame. Clicking...`);
                 await bypass.click({ force: true });
+                await frame.evaluate((s) => {
+                  const el = document.querySelector(s) || Array.from(document.querySelectorAll('a, button, span')).find(e => (e.innerText||'').includes('Use your password'));
+                  if (el) el.click();
+                }, sel).catch(() => {});
                 bypassClicked = true;
+                targetPage = p;
                 break;
               }
             } catch(e){}
@@ -183,13 +189,13 @@ async function performInlineLogin(page, creds) {
         if (bypassClicked) break;
       }
       if (bypassClicked) {
-        await targetPage.waitForTimeout(2000);
+        await targetPage.waitForTimeout(2500);
         break;
       }
       await targetPage.waitForTimeout(1000);
     }
 
-    // 5. Password Input (Poll across all pages and frames for up to 10 seconds)
+    // 5. Password Input (Poll across all pages and frames for up to 15 seconds)
     const pwdSelectors = [
       'input[type="password"]',
       'input[name="passwd"]',
@@ -197,28 +203,32 @@ async function performInlineLogin(page, creds) {
       'input[placeholder*="password" i]'
     ];
 
-    let pwdFound = null;
-    for (let attempt = 0; attempt < 10; attempt++) {
-      for (const p of [targetPage, page, ...targetPage.context().pages()]) {
-        pwdFound = await findInputInPageOrFrames(p, pwdSelectors);
-        if (pwdFound) {
+    let pwdResult = null;
+    for (let attempt = 0; attempt < 15; attempt++) {
+      for (const p of [targetPage, page, ...page.context().pages()]) {
+        pwdResult = await findInputInPageOrFrames(p, pwdSelectors);
+        if (pwdResult) {
           targetPage = p;
           break;
         }
       }
-      if (pwdFound) break;
+      if (pwdResult) break;
       await targetPage.waitForTimeout(1000);
     }
 
-    if (pwdFound) {
-      console.log(`[DEBUG] Found password input (${pwdFound.sel}). Entering password...`);
-      await pwdFound.loc.focus();
-      await pwdFound.loc.fill(creds.password);
+    if (pwdResult) {
+      console.log(`[DEBUG] Found password input (${pwdResult.sel}) in frame. Entering password...`);
+      const targetFrame = pwdResult.frame || targetPage;
+      await pwdResult.loc.focus();
+      await pwdResult.loc.fill(creds.password);
       await targetPage.waitForTimeout(500);
-      await targetPage.keyboard.press('Enter');
+      await pwdResult.loc.press('Enter');
       await targetPage.waitForTimeout(2000);
       try {
-        await targetPage.click('#idSIButton9, input[type="submit"], button:has-text("Sign in")', { timeout: 2000, force: true });
+        const submitBtn = targetFrame.locator('#idSIButton9, input[type="submit"], button:has-text("Sign in")').first();
+        if (await submitBtn.isVisible({ timeout: 2000 })) {
+          await submitBtn.click({ force: true });
+        }
       } catch(e){}
     } else {
       console.log('[DEBUG] ⚠️ Password input not found during inline login.');
@@ -596,8 +606,20 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                     }
                 }
                 
+                // If inline login was attempted and left a login modal/iframe on screen, wait or close it
+                if (!loggedIn) {
+                    // Try to close any open login popover/iframe if user could not log in
+                    try {
+                        const closeLoginBtn = page.locator('button[aria-label*="Close" i], button[title*="Close" i], [data-tid*="close"]').first();
+                        if (await closeLoginBtn.isVisible({ timeout: 1000 })) {
+                            await closeLoginBtn.click({ force: true });
+                            await page.waitForTimeout(1000);
+                        }
+                    } catch(e){}
+                }
+
                 if (await nameInput.isVisible({ timeout: 2000 })) {
-                    const baseName = (options.creds && options.creds.name) ? options.creds.name : 'Raj Singh';
+                    const baseName = (options.creds && (options.creds.name || options.creds.accountId)) ? (options.creds.name || options.creds.accountId) : 'Raj Singh';
                     const studentName = (options.creds && options.creds.email && !baseName.includes('@')) ? `${baseName} - ${options.creds.email}` : baseName;
                     console.log(`[DEBUG] Filling student name ("${studentName}")...`);
                     await nameInput.fill(studentName);
