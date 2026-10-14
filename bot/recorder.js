@@ -136,85 +136,120 @@ async function waitForPlayback(page, timeoutMs = 15000) {
 async function attemptDirectDownload(page, outputPath) {
   console.log('🔍 Checking if direct Download option is available on OneDrive / SharePoint / Stream...');
 
-  const downloadSelectors = [
+  const topSelectors = [
     'button[data-automationid="downloadCommand"]',
     'button[name="Download" i]',
     'button[aria-label="Download" i]',
     'button[title="Download" i]',
-    'button:has-text("Download")',
-    'a[data-automationid="downloadCommand"]',
-    'a[name="Download" i]',
-    'a[aria-label="Download" i]',
-    'a:has-text("Download")',
-    '[role="menuitem"]:has-text("Download")',
-    'button:has([data-icon-name="Download"])'
+    'button:has-text("Download")'
   ];
 
-  // 1. Direct check on visible toolbar
-  for (const sel of downloadSelectors) {
+  let topBtn = null;
+  for (const sel of topSelectors) {
     try {
       const loc = page.locator(sel).first();
       if (await loc.isVisible({ timeout: 1500 })) {
-        console.log(`⚡ Found direct Download button: "${sel}"! Triggering download...`);
-        const [ download ] = await Promise.all([
-          page.waitForEvent('download', { timeout: 60000 }),
-          loc.click()
-        ]);
-        if (download) {
-          console.log(`⬇️ Downloading file directly: ${download.suggestedFilename()}...`);
-          await download.saveAs(outputPath);
-          if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 1024 * 1024) {
-            console.log(`🎉 Direct download complete! Size: ${(fs.statSync(outputPath).size / (1024 * 1024)).toFixed(2)} MB`);
-            return true;
-          }
-        }
+        topBtn = loc;
+        console.log(`⚡ Found toolbar download button: "${sel}"`);
+        break;
       }
-    } catch (e) {
-      console.log(`[Direct Download attempt with ${sel} skipped: ${e.message}]`);
-    }
+    } catch (_) {}
   }
 
-  // 2. Check if hidden under "More" / "..." overflow menu
-  const moreSelectors = [
-    'button[data-automationid="moreActions"]',
-    'button[aria-label="More" i]',
-    'button[aria-label="See more" i]',
-    'button[aria-label="More commands" i]',
-    'button[title="More commands" i]',
-    'button:has([data-icon-name="More"])'
-  ];
-
-  for (const mSel of moreSelectors) {
+  if (!topBtn) {
+    const moreBtn = page.locator('button[data-automationid="moreActions"], button[aria-label="More" i], button[aria-label="See more" i], button:has([data-icon-name="More"])').first();
     try {
-      const mLoc = page.locator(mSel).first();
-      if (await mLoc.isVisible({ timeout: 1000 })) {
-        console.log(`🔍 Checking overflow menu "${mSel}" for Download option...`);
-        await mLoc.click();
-        await page.waitForTimeout(1000);
-
-        for (const dSel of downloadSelectors) {
-          const dLoc = page.locator(dSel).first();
-          if (await dLoc.isVisible({ timeout: 1000 })) {
-            console.log(`⚡ Found Download button in overflow menu: "${dSel}"!`);
-            const [ download ] = await Promise.all([
-              page.waitForEvent('download', { timeout: 60000 }),
-              dLoc.click()
-            ]);
-            if (download) {
-              console.log(`⬇️ Downloading file directly: ${download.suggestedFilename()}...`);
-              await download.saveAs(outputPath);
-              if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 1024 * 1024) {
-                console.log(`🎉 Direct download complete! Size: ${(fs.statSync(outputPath).size / (1024 * 1024)).toFixed(2)} MB`);
-                return true;
-              }
-            }
+      if (await moreBtn.isVisible({ timeout: 1500 })) {
+        console.log('Opening More menu...');
+        await moreBtn.click();
+        await page.waitForTimeout(800);
+        for (const sel of topSelectors) {
+          const loc = page.locator(sel).first();
+          if (await loc.isVisible({ timeout: 1000 })) {
+            topBtn = loc;
+            console.log(`⚡ Found toolbar download button in overflow: "${sel}"`);
+            break;
           }
         }
       }
     } catch (_) {}
   }
 
-  console.log('[INFO] Direct download button not present or not accessible. Proceeding with real-time video capture.');
+  if (!topBtn) {
+    console.log('[INFO] No direct download button found on page.');
+    return false;
+  }
+
+  const downloadDir = path.dirname(outputPath);
+  fs.mkdirSync(downloadDir, { recursive: true });
+
+  try {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Page.setDownloadBehavior', {
+      behavior: 'allow',
+      downloadPath: downloadDir
+    });
+    console.log('✅ CDP Download behavior set to allow.');
+  } catch (cdpErr) {
+    console.log('[WARN] CDP setDownloadBehavior warning:', cdpErr.message);
+  }
+
+  console.log('Clicking toolbar download button...');
+  await topBtn.click();
+  await page.waitForTimeout(1000);
+
+  // Check if confirmation modal appears
+  const modalBtn = page.locator('[role="dialog"] button:has-text("Download"), .ms-Dialog button:has-text("Download")').last();
+  try {
+    if (await modalBtn.isVisible({ timeout: 5000 })) {
+      console.log('Found modal confirmation! Clicking modal Download button...');
+      await modalBtn.click();
+    }
+  } catch (_) {}
+
+  // Monitor directory for the downloading / completed file
+  console.log('Waiting for downloaded file to finish...');
+  const startTime = Date.now();
+  let lastSize = -1;
+  let stableCount = 0;
+
+  while (Date.now() - startTime < 300000) { // up to 5 minutes
+    await page.waitForTimeout(3000);
+    const files = fs.readdirSync(downloadDir);
+    
+    // Look for file
+    const targetFile = files.find(f => /Meeting Recording|\.mp4|\.crdownload/i.test(f));
+    if (targetFile) {
+      const fullPath = path.join(downloadDir, targetFile);
+      const currentSize = fs.statSync(fullPath).size;
+      const mb = (currentSize / (1024 * 1024)).toFixed(2);
+      console.log(`[Progress] Download file: ${targetFile} (${mb} MB)`);
+
+      if (targetFile.endsWith('.crdownload')) {
+        if (currentSize > 5 * 1024 * 1024 && currentSize === lastSize) {
+          stableCount++;
+          if (stableCount >= 3) {
+            console.log('File size stable! Transfer complete. Renaming to outputPath...');
+            fs.copyFileSync(fullPath, outputPath);
+            try { fs.unlinkSync(fullPath); } catch (_) {}
+            return true;
+          }
+        } else {
+          stableCount = 0;
+        }
+        lastSize = currentSize;
+      } else if (targetFile.endsWith('.mp4') && currentSize > 5 * 1024 * 1024) {
+        console.log(`🎉 Download finished naturally as .mp4! Renaming to outputPath...`);
+        if (fullPath !== outputPath) {
+          fs.copyFileSync(fullPath, outputPath);
+          try { fs.unlinkSync(fullPath); } catch (_) {}
+        }
+        return true;
+      }
+    }
+  }
+
+  console.log('[INFO] Direct download timed out or incomplete. Proceeding with real-time video capture.');
   return false;
 }
 
