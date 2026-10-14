@@ -1556,12 +1556,25 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
 
         // 3. Bot is alone in meeting (Waiting for others screen OR 1 participant OR 0 participants on stage)
         const isAlone = stats.isWaitingForOthers || currentCount === 1 || (currentCount === 0 && loopCount > 6 && stats.hasCallStage && !stats.inLobby);
-        if (isAlone && loopCount > 4) {
+        if (isAlone) {
             aloneCount++;
-            console.log(`[DEBUG] Bot is alone in meeting (WaitingForOthers: ${!!stats.isWaitingForOthers}, count: ${currentCount}) (${aloneCount}/3 checks - 45s)...`);
-            if (aloneCount >= 3) {
-                console.log('🎓 Bot has been alone in meeting for >45 seconds. Stopping recording.');
-                meetingEnded = true;
+            if (maxParticipants >= 3) {
+                // Class has already taken place (peak >= 3), now EVERYONE HAS LEFT!
+                console.log(`[DEBUG] All participants have left the meeting (WaitingForOthers: ${!!stats.isWaitingForOthers}, count: ${currentCount}) (${aloneCount}/3 checks - 45s)...`);
+                if (aloneCount >= 3) {
+                    console.log('🎓 Class finished! All participants left and bot was alone for >45 seconds. Stopping recording.');
+                    meetingEnded = true;
+                }
+            } else {
+                // Bot joined early/first! Class hasn't started yet. Keep waiting for teacher/students (up to 30 mins).
+                if (aloneCount % 4 === 0) {
+                    const waitedMins = (aloneCount * 15 / 60).toFixed(1);
+                    console.log(`[DEBUG] ⏳ Waiting for class to start: Bot joined first (${waitedMins}m / 30m elapsed, waiting for teacher/students)...`);
+                }
+                if (aloneCount >= 120) { // 30 minutes of empty room before class ever started
+                    console.log('⏰ No one joined the meeting after 30 minutes. Class cancelled or rescheduled. Stopping recording.');
+                    meetingEnded = true;
+                }
             }
         } else if (currentCount > 1) {
             aloneCount = 0;
