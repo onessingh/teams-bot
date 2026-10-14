@@ -1278,6 +1278,8 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     let aloneCount = 0;
     let noUiCount = 0;
     let exodusCount = 0;
+    let smallMeetingDropCount = 0;
+    let callDisconnectedCount = 0;
     let maxParticipants = 0;
     const recentCounts = [];
     
@@ -1470,52 +1472,101 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
               currentCount = galleryTiles.length;
             }
             
-            const inLobby = text.includes("we've let people in the meeting know you're waiting") || text.includes("when the meeting starts, we'll let people know you're waiting");
+            const inLobby = text.includes("we've let people in the meeting know you're waiting") || 
+                            text.includes("when the meeting starts, we'll let people know") ||
+                            text.includes("waiting in the lobby");
             
-            // Check if meeting UI / canvas is present
-            const hasMeetingUI = !!(
-                currentCount > 0 ||
+            // Active call stage indicators
+            const hasCallStage = !!(
+                document.querySelector('[data-tid="calling-roster-stage"], [data-tid="video-gallery"], [data-tid="meeting-canvas"], [data-tid="presentation-stage"], [data-tid="screen-sharing-canvas"]') ||
+                document.querySelector('[data-tid="hang-up-btn"], [data-tid="leave-button"], [data-tid="call-hangup"], #hangup-button') ||
+                document.querySelector('[data-tid="meeting-toolbar"], [data-tid="call-controls"]') ||
                 galleryTiles.length > 0 ||
-                document.querySelector('video') ||
-                document.querySelector('canvas') ||
-                document.querySelector('#roster-button, [data-inp="roster-button"], [data-tid="roster-button"], [data-tid="hang-up-btn"], [data-tid="leave-button"], [data-tid="call-hangup"], #hangup-button') ||
-                document.querySelector('[data-tid="calling-roster-stage"], [data-tid="video-gallery"], [data-tid="meeting-canvas"], [data-tid="screen-sharing-canvas"]') ||
-                text.includes('leave') ||
-                text.includes('people') ||
-                /(?:\d{2}:\d{2}|--:--)/.test(text)
+                document.querySelector('video')
+            );
+
+            // In Teams Chat view (call ended / disconnected / switched to chat window)
+            const inChatView = !hasCallStage && !!(
+                document.querySelector('[data-tid="chat-list"], [data-tid="message-pane"], [data-tid="channel-pane"], [data-tid="chat-calling-join-button"]') ||
+                text.includes('chat is turned off for this meeting') ||
+                text.includes('recording has started') ||
+                text.includes('did you leave by mistake') ||
+                (text.includes('chat') && !hasCallStage)
             );
             
-            return { ended, currentCount, inLobby, hasMeetingUI };
+            return { ended, currentCount, inLobby, hasCallStage, inChatView };
         });
         
         let meetingEnded = stats.ended;
         const currentCount = stats.currentCount;
 
-        // Alone in meeting check (if count === 1 for 3 consecutive checks = 45 seconds)
-        if (currentCount === 1) {
+        if (currentCount > maxParticipants) {
+            maxParticipants = currentCount;
+        }
+
+        // 1. Explicit Meeting Ended screen detection
+        if (stats.ended) {
+            console.log('🏁 Meeting ended screen detected (Organizer ended call or removed). Stopping recording.');
+            meetingEnded = true;
+        }
+
+        // 2. Call Disconnected / Chat view detection (when call stage vanishes or disconnected from phone)
+        if (!stats.inLobby && !stats.hasCallStage && (stats.inChatView || currentCount === 0) && loopCount > 4) {
+            callDisconnectedCount++;
+            console.log(`[DEBUG] Call stage not found (Call disconnected / returned to Chat) (${callDisconnectedCount}/3 checks - 45s)...`);
+            if (callDisconnectedCount >= 3) {
+                console.log('🚪 Call stage vanished for >45s. Meeting ended or disconnected from another device. Stopping recording.');
+                meetingEnded = true;
+            }
+        } else {
+            callDisconnectedCount = 0;
+        }
+
+        // 3. Bot is alone in meeting (1 participant)
+        if (currentCount === 1 && loopCount > 4) {
             aloneCount++;
-            console.log(`[DEBUG] Bot is alone in meeting (1 participant) (${aloneCount}/3 checks)...`);
-            if (aloneCount >= 3 && loopCount > 4) {
-                console.log('[DEBUG] Bot has been alone in meeting for >45 seconds. Class ended.');
+            console.log(`[DEBUG] Bot is alone in meeting (1 participant) (${aloneCount}/3 checks - 45s)...`);
+            if (aloneCount >= 3) {
+                console.log('🎓 Bot has been alone in meeting for >45 seconds. Stopping recording.');
                 meetingEnded = true;
             }
         } else if (currentCount > 1) {
             aloneCount = 0;
         }
-        
-        // Missing stage UI check (ONLY if UI missing AND 0 participants detected for 4 checks)
-        if (!stats.inLobby && !stats.hasMeetingUI && currentCount === 0 && loopCount > 6) {
-            noUiCount++;
-            console.log(`[DEBUG] No meeting UI/canvas detected (${noUiCount}/4 checks)...`);
-            if (noUiCount >= 4) {
-                console.log('[DEBUG] No meeting UI detected for 1 minute. Meeting ended or disconnected.');
+
+        // 4. Almost empty meeting (<= 2 participants left when class was larger)
+        if (maxParticipants >= 5 && currentCount > 0 && currentCount <= 2 && loopCount > 6) {
+            smallMeetingDropCount++;
+            console.log(`[DEBUG] Almost empty meeting: only ${currentCount} participants left (Peak: ${maxParticipants}) (${smallMeetingDropCount}/8 checks - 2 mins)...`);
+            if (smallMeetingDropCount >= 8) {
+                console.log(`🎓 Meeting almost empty (only ${currentCount} participants left for >2 minutes). Stopping recording.`);
                 meetingEnded = true;
             }
         } else {
-            noUiCount = 0;
+            smallMeetingDropCount = 0;
         }
-        
-        // Lobby Timeout Logic (30 minutes)
+
+        // 5. USER REQUESTED 5-MINUTE MASS EXODUS RULE:
+        // "achank se bahot sare log left ho jaaye to 5 min baad recording band kar dena"
+        // If peak attendance was >= 10, and count drops to <= 25% of peak OR <= 5 participants:
+        const isMassExodus = (maxParticipants >= 10 && currentCount > 0 && (
+            currentCount <= Math.max(3, Math.floor(maxParticipants * 0.25)) ||
+            (maxParticipants >= 15 && currentCount <= 5)
+        ));
+
+        if (isMassExodus && loopCount > 8) {
+            exodusCount++;
+            const elapsedMins = (exodusCount * 15 / 60).toFixed(1);
+            console.log(`[DEBUG] 📉 Mass exodus in progress: ${currentCount} participants left (Peak: ${maxParticipants}) (${exodusCount}/20 checks - ${elapsedMins}m / 5.0m)...`);
+            if (exodusCount >= 20) { // 20 * 15s = 300s = 5 minutes
+                console.log(`🎓 Class finished! Mass exodus confirmed: Participants dropped from peak ${maxParticipants} to ${currentCount} and stayed low for >5 minutes. Stopping recording!`);
+                meetingEnded = true;
+            }
+        } else {
+            exodusCount = 0;
+        }
+
+        // 6. Lobby Timeout Logic (30 minutes)
         if (stats.inLobby) {
             lobbyWaitLoops++;
             if (lobbyWaitLoops > 120) {
@@ -1525,43 +1576,9 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         } else {
             lobbyWaitLoops = 0;
         }
-        
-        if (currentCount > maxParticipants) {
-            maxParticipants = currentCount;
-        }
-        
-        if (currentCount > 0) {
-            recentCounts.push(currentCount);
-            if (recentCounts.length > 8) recentCounts.shift();
-        }
-
-        // Exodus / Drop detection (Require 3 consecutive checks = 45s to avoid false triggers)
-        if (loopCount > 6 && recentCounts.length >= 3) {
-            const recentMax = Math.max(...recentCounts);
-            if (recentMax >= 4) {
-                if (currentCount > 0 && currentCount <= Math.ceil(recentMax * 0.50)) {
-                    exodusCount++;
-                    console.log(`[DEBUG] Potential mass exodus detected (${currentCount} <= ${Math.ceil(recentMax * 0.50)}) (${exodusCount}/3 checks)...`);
-                    if (exodusCount >= 3) {
-                        console.log(`[DEBUG] Confirmed mass exodus detected! Recent max was ${recentMax}, now ${currentCount}. Ending meeting.`);
-                        meetingEnded = true;
-                    }
-                } else {
-                    exodusCount = 0;
-                }
-            } else if (recentMax > 1 && recentMax < 4) {
-                if (currentCount === 1) {
-                    aloneCount++;
-                    if (aloneCount >= 3) {
-                        console.log(`[DEBUG] Small meeting drop detected (all ${recentMax} participants left). Ending meeting.`);
-                        meetingEnded = true;
-                    }
-                }
-            }
-        }
 
         if (meetingEnded) {
-          console.log('🏁 Meeting ended screen, Organizer departure, or zero participants detected. Stopping recording early.');
+          console.log('🏁 Meeting end condition met. Stopping recording and exiting.');
           break;
         }
       } catch (err) {}
