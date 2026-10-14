@@ -1286,6 +1286,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     const teacherScores = {};
     let lockedTeacher = null;
     let teacherMissingCount = 0;
+    let noActivityCount = 0;
     
     while (Date.now() - startTime < recordMs) {
       await sleep(15000); // Check every 15 seconds
@@ -1314,14 +1315,20 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
           let isSharing = false;
 
           // 1. Check Screen Share Presenter
-          const screenShareStage = document.querySelector('[data-tid="screen-share"], [data-tid="presentation-stage"], [data-tid*="sharing"], [class*="screen-share"]');
+          const screenShareStage = document.querySelector('[data-tid="screen-share"], [data-tid="presentation-stage"], [data-tid*="sharing"], [class*="screen-share"], [data-tid="screen-sharing-canvas"]');
           if (screenShareStage) {
             isSharing = true;
-            const presenterNameEl = screenShareStage.querySelector('span, div');
-            if (presenterNameEl) {
-              const name = (presenterNameEl.textContent || '').trim();
-              if (name && name.length > 2 && !name.includes('In this meeting')) {
-                signals[name] = (signals[name] || 0) + 5; // Screen share = 5 pts
+            // Check for "X is presenting" text across all headers/spans
+            const textNodes = Array.from(document.querySelectorAll('span, div, h2, p'));
+            for (const el of textNodes) {
+              const t = (el.textContent || '').trim();
+              const m = t.match(/([A-Z][a-zA-Z\s.]+?)\s+(?:is presenting|has started sharing|'s screen)/i);
+              if (m && m[1]) {
+                const name = m[1].trim();
+                if (name.length > 2 && !name.includes('In this meeting') && !name.includes('Participants')) {
+                  signals[name] = (signals[name] || 0) + 6; // Screen share presenter = +6 pts
+                  break;
+                }
               }
             }
           }
@@ -1330,22 +1337,26 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
           }
 
           // 2. Check Video Gallery / Tiles (Active mic / speaker / camera)
-          const tiles = document.querySelectorAll('[data-tid="video-tile"], [data-cid="video-tile"], [class*="video-tile"], [class*="participant"]');
+          const tiles = document.querySelectorAll('[data-tid="video-tile"], [data-cid="video-tile"], [class*="video-tile"], [class*="participant"], [role="listitem"]');
           tiles.forEach(tile => {
-            const nameEl = tile.querySelector('span[data-tid="author"], span[class*="name"], div[class*="participant-name"], [data-tid="participant-name"]');
+            let name = '';
+            const nameEl = tile.querySelector('span[data-tid="author"], span[class*="name"], div[class*="participant-name"], [data-tid="participant-name"], [data-tid="video-tile-name"], footer, figcaption');
             if (nameEl) {
-              const name = (nameEl.textContent || '').trim();
-              if (name && name.length > 2 && !name.includes('In this meeting')) {
-                let pts = 1;
-                const html = (tile.outerHTML || '').toLowerCase();
-                if (html.includes('speaking') || html.includes('unmute') || tile.querySelector('[class*="speaking"]')) {
-                  pts += 3; // Active speaking = +3 pts
-                }
-                if (tile.querySelector('video')) {
-                  pts += 2; // Active camera = +2 pts
-                }
-                signals[name] = (signals[name] || 0) + pts;
+              name = (nameEl.textContent || '').trim();
+            } else {
+              const raw = (tile.innerText || '').split('\n').map(s => s.trim()).filter(s => s.length > 2 && !/^(sg|m|p|a|\d|on hold)$/i.test(s));
+              if (raw.length > 0) name = raw[0];
+            }
+            if (name && name.length > 2 && !name.includes('In this meeting') && !name.includes('Participants')) {
+              let pts = 1;
+              const html = (tile.outerHTML || '').toLowerCase();
+              if (html.includes('speaking') || html.includes('unmute') || tile.querySelector('[class*="speaking"]')) {
+                pts += 3; // Active speaking = +3 pts
               }
+              if (tile.querySelector('video')) {
+                pts += 2; // Active camera = +2 pts
+              }
+              signals[name] = (signals[name] || 0) + pts;
             }
           });
 
@@ -1369,9 +1380,13 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
           teacherScores[name] = (teacherScores[name] || 0) + score;
         }
 
-        // Lock teacher once cumulative score reaches >= 40 pts OR after 15 mins (loopCount >= 60)
-        // This guarantees students asking short questions are NEVER mistaken for the teacher!
-        if (loopCount >= 60 || Object.values(teacherScores).some(s => s >= 40)) {
+        if (loopCount % 4 === 0 && Object.keys(teacherScores).length > 0) {
+          const topList = Object.entries(teacherScores).sort((a,b)=>b[1]-a[1]).slice(0, 3).map(([n,s])=>`${n}: ${s}pts`).join(', ');
+          console.log(`[DEBUG] 🎓 Top speaker scores: ${topList}`);
+        }
+
+        // Lock teacher once cumulative score reaches >= 20 pts OR after 5 mins (loopCount >= 20)
+        if (loopCount >= 20 || Object.values(teacherScores).some(s => s >= 20)) {
           let topTeacher = null;
           let maxScore = 0;
           for (const [name, score] of Object.entries(teacherScores)) {
@@ -1381,7 +1396,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             }
           }
 
-          if (topTeacher && maxScore >= 40) {
+          if (topTeacher && maxScore >= 20) {
             if (lockedTeacher !== topTeacher) {
               lockedTeacher = topTeacher;
               console.log(`🎓 Locked Teacher Identified: "${lockedTeacher}" (Cumulative Score: ${maxScore})`);
