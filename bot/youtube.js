@@ -76,11 +76,13 @@ async function uploadToYouTube(videoPath, subject, onProgress) {
             }
 
             let finalTitle;
-            if (playlistTitle) {
+            if (options && options.videoTitle) {
+                finalTitle = options.videoTitle;
+            } else if (playlistTitle) {
                 const classNum = itemCount + 1;
                 finalTitle = `${playlistTitle} - Class ${classNum} - ${dateStr}`;
             } else {
-                finalTitle = (options && options.videoTitle) ? options.videoTitle : `Teams Class - ${dateStr}`;
+                finalTitle = `Teams Class - ${dateStr}`;
             }
             console.log(`[YouTube] Generated Video Title: ${finalTitle}`);
 

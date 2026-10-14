@@ -27,11 +27,129 @@ function formatDateDDMMYY(d = new Date()) {
   return `${day}/${month}/${year}`;
 }
 
+function formatDateDDMMYYYY(d = new Date()) {
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
+}
+
 function formatDateYYYYMMDD(d = new Date()) {
   const day = String(d.getDate()).padStart(2, '0');
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const year = d.getFullYear();
   return `${year}-${month}-${day}`;
+}
+
+const SUBJECT_SHORT_CODES = {
+  // Semester 1
+  'information technology management': 'IT',
+  'accounting for managers': 'AFM',
+  'marketing management': 'MM',
+  'human resource management': 'HRM',
+  'managerial economics': 'ME',
+  'business communication': 'BC',
+  'data analysis and decision tools': 'DADT',
+  'organisational behaviour': 'OB',
+  'organizational behaviour': 'OB',
+
+  // Semester 2
+  'management of information systems': 'MIS',
+  'marketing research': 'MR',
+  'production & operations management': 'POM',
+  'production and operations management': 'POM',
+  'management accounting': 'MA',
+  'corporate finance': 'CF',
+  'decision modeling & optimization': 'DMO',
+  'economic environment of businesses': 'EEB',
+  'organisation effectiveness & change': 'OEC',
+  'organizational effectiveness & change': 'OEC',
+
+  // Semester 3
+  'strategic analysis': 'SA',
+  'business ethics and sustainability': 'BES',
+  'entrepreneurship, creativity and innovation': 'ECI',
+  'entrepreneurship creativity and innovation': 'ECI',
+  'security analysis and portfolio management': 'SAPM',
+  'financial markets & institutions': 'FMI',
+  'financial markets and institutions': 'FMI',
+  'mergers and corporate restructuring': 'MCR',
+  'international financial management': 'IFM',
+  'financial derivatives': 'FD',
+  'advertisement management': 'Adv',
+  'advertising management': 'Adv',
+  'consumer behaviour': 'CB',
+  'consumer behavior': 'CB',
+  'services marketing': 'SM',
+  'digital marketing': 'DM',
+  'brand management': 'BM',
+  'human resource development': 'HRD',
+  'human resource development : strategies and systems': 'HRD',
+  'leadership , power and politics': 'LPP',
+  'leadership power and politics': 'LPP',
+  'performance management and training intervention': 'PMTI',
+  'compensation and reward management': 'CRM',
+  'cross cultural and global management': 'CCGM',
+
+  // Semester 4
+  'artificial intelligence and deep learning': 'AI',
+  'predictive analytics and big data': 'PABD',
+  'global business management': 'GBM',
+  'legal environment of business': 'LEB',
+  'strategic management': 'SM',
+  'corporate tax': 'CT',
+  'financial reporting': 'FR',
+  'financial risk management': 'FRM',
+  'fixed income securities': 'FIS',
+  'merchant banking and financial services': 'MBFS',
+  'quantitative analysis of financial decision': 'QAFD',
+  'business marketing': 'BM',
+  'competitive marketing': 'CM',
+  'marketing analytics': 'MA',
+  'rural marketing': 'RM',
+  'sales force management': 'SFM',
+  'hr metrics and analytics': 'HRMA',
+  'counselling skills for managers': 'CSM',
+  'management of industrial relations': 'MIR',
+  'managing interpersonal and group process': 'MIGP',
+  'negotiation and influence skills': 'NIS',
+  'operation strategy': 'OS',
+  'supply chain analytics': 'SCA',
+  'supply chain management': 'SCM',
+  'system optimisation and management science': 'SOMS',
+  'system optimization and management science': 'SOMS',
+  'technology innovation and new product management': 'TINPM',
+  'international business strategy': 'IBS',
+  'strategic capability building and innovation': 'SCBI',
+  'strategic innovation in health care and education': 'SIHE',
+  'strategic management in social enterprises': 'SMSE',
+  'strategic management of startups': 'SMS'
+};
+
+function getShortSubjectCode(rawSubject) {
+  if (!rawSubject) return 'Class';
+  let clean = rawSubject;
+  if (clean.includes(':')) {
+    clean = clean.split(':').slice(1).join(':').trim();
+  }
+  clean = clean.replace(/\(Sem\s*\d+\)/gi, '').trim();
+
+  const norm = clean.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  
+  if (SUBJECT_SHORT_CODES[norm]) return SUBJECT_SHORT_CODES[norm];
+
+  for (const [key, code] of Object.entries(SUBJECT_SHORT_CODES)) {
+    if (norm.includes(key) || key.includes(norm)) {
+      return code;
+    }
+  }
+
+  const words = clean.split(/\s+/).filter(w => !/^(and|of|for|in|&|the)$/i.test(w));
+  if (words.length > 0) {
+    const initials = words.map(w => w[0].toUpperCase()).join('');
+    if (initials.length >= 2 && initials.length <= 5) return initials;
+  }
+  return clean.slice(0, 10).trim();
 }
 
 function normalize(str) {
@@ -199,39 +317,72 @@ class SolmatesClient {
   }
 
   /**
+   * Determine the next class number and title directly from Solmates.in folder!
+   */
+  async getNextClassInfo(semester, subject, date = new Date()) {
+    const folder = await this.resolveSubjectFolder(semester, subject);
+
+    // Fetch existing classes in this folder to calculate next class number
+    const itemsRes = await apiRequest(`/sol/recorded-class/${semester}?folderId=${folder.id}`);
+    const existingCount = (itemsRes && Array.isArray(itemsRes.data)) ? itemsRes.data.length : 0;
+    const nextClassNum = existingCount + 1;
+    const ordinalWord = getOrdinalWord(nextClassNum);
+
+    const shortCode = getShortSubjectCode(subject);
+    const dateFormattedYMD = formatDateYYYYMMDD(date);
+    const dateFormattedDDMMYY = formatDateDDMMYY(date);
+    const dateFormattedDDMMYYYY = formatDateDDMMYYYY(date);
+
+    const youtubeTitle = `${shortCode}..${ordinalWord} Class(${dateFormattedDDMMYYYY})`;
+    const solmatesTitle = `${dateFormattedDDMMYY} Online ${ordinalWord} Class`;
+
+    return {
+      folder,
+      existingCount,
+      nextClassNum,
+      ordinalWord,
+      shortCode,
+      youtubeTitle,
+      solmatesTitle,
+      dateFormattedYMD
+    };
+  }
+
+  /**
    * Upload video to solmates.in
    */
-  async uploadLecture({ semester, subject, youtubeUrl, date = new Date() }) {
+  async uploadLecture({ semester, subject, youtubeUrl, date = new Date(), customTitle = null }) {
     if (!this.token) {
       await this.login();
     }
 
-    const folder = await this.resolveSubjectFolder(semester, subject);
-    console.log(`[Solmates] Found folder: "${folder.name}" (ID: ${folder.id}) for ${subject}`);
+    const info = await this.getNextClassInfo(semester, subject, date);
+    const finalTitle = customTitle || info.solmatesTitle;
 
-    // Fetch existing classes in this folder to calculate next class number
-    const itemsRes = await apiRequest(`/sol/recorded-class/${semester}?folderId=${folder.id}`);
-    const existingCount = (itemsRes && itemsRes.data) ? itemsRes.data.length : 0;
-    const nextClassNum = existingCount + 1;
-    const ordinalWord = getOrdinalWord(nextClassNum);
-    
-    const dateFormatted = formatDateDDMMYY(date);
-    const title = `${dateFormatted} Online ${ordinalWord} Class`;
-    const ymd = formatDateYYYYMMDD(date);
-
-    console.log(`[Solmates] Creating new item: "${title}" in "${folder.name}" with URL: ${youtubeUrl}`);
+    console.log(`[Solmates] Folder: "${info.folder.name}" | Existing: ${info.existingCount} | Next: ${info.ordinalWord} Class`);
+    console.log(`[Solmates] Titles -> YouTube: "${info.youtubeTitle}" | Solmates: "${finalTitle}"`);
 
     const res = await apiRequest(`/sol/recorded-class/${semester}`, 'POST', {
-      folderId: folder.id,
-      title: title,
+      folderId: info.folder.id,
+      title: finalTitle,
       link: youtubeUrl,
-      date: ymd,
+      pdf: youtubeUrl,
+      subject: finalTitle,
+      date: info.dateFormattedYMD,
       semester: String(semester)
     }, this.token);
 
     if (res && (res.success || res._id || res.id)) {
-      console.log(`✅ [Solmates] Successfully published to solmates.in: "${title}"`);
-      return { success: true, title, folderName: folder.name, data: res };
+      console.log(`✅ [Solmates] Successfully published to solmates.in: "${finalTitle}"`);
+      return { 
+        success: true, 
+        title: finalTitle, 
+        youtubeTitle: info.youtubeTitle, 
+        folderName: info.folder.name, 
+        classNum: info.nextClassNum,
+        ordinalWord: info.ordinalWord,
+        data: res 
+      };
     } else {
       throw new Error(`[Solmates] Failed to add item: ${JSON.stringify(res)}`);
     }
@@ -241,5 +392,8 @@ class SolmatesClient {
 module.exports = {
   SolmatesClient,
   formatDateDDMMYY,
-  getOrdinalWord
+  formatDateDDMMYYYY,
+  getOrdinalWord,
+  getShortSubjectCode,
+  SUBJECT_SHORT_CODES
 };

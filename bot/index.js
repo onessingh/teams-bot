@@ -267,7 +267,42 @@ async function processItem(item) {
         playlistName = `${playlistName} (Sem ${item.semester})`;
       }
     }
-    const videoTitle = item.title || `Teams Class - ${new Date().toLocaleDateString('en-IN')}`;
+
+    let videoTitle = null;
+    let solmatesClient = null;
+    let solmatesClassInfo = null;
+
+    // Single source of truth: Decide class number & YouTube title from Solmates.in!
+    if (item.semester && item.subject) {
+      try {
+        const { SolmatesClient } = require('./solmates');
+        let adminId = process.env.SOLMATES_ADMIN_ID;
+        let password = process.env.SOLMATES_ADMIN_PASSWORD;
+
+        if (!adminId || !password) {
+          const cfgSnap = await db.ref('config/solmates').once('value');
+          const cfg = cfgSnap.val();
+          if (cfg && cfg.adminId && cfg.password) {
+            adminId = cfg.adminId;
+            password = cfg.password;
+          }
+        }
+
+        if (adminId && password) {
+          solmatesClient = new SolmatesClient(adminId, password);
+          await solmatesClient.login();
+          solmatesClassInfo = await solmatesClient.getNextClassInfo(item.semester, item.subject, new Date());
+          videoTitle = solmatesClassInfo.youtubeTitle;
+          console.log(`[YouTube Title from Solmates] "${videoTitle}" (Class #${solmatesClassInfo.nextClassNum})`);
+        }
+      } catch (sErr) {
+        console.warn('[Solmates Title Prep Warning]:', sErr.message);
+      }
+    }
+
+    if (!videoTitle) {
+      videoTitle = item.title || `Teams Class - ${new Date().toLocaleDateString('en-IN')}`;
+    }
 
     let ytResult = null;
     try {
@@ -293,26 +328,33 @@ async function processItem(item) {
     if (youtubeUrl && item.semester && item.subject) {
       try {
         console.log(`[Solmates] Auto-publishing to solmates.in for Sem ${item.semester} - ${item.subject}...`);
-        const { SolmatesClient } = require('./solmates');
-        let adminId = process.env.SOLMATES_ADMIN_ID;
-        let password = process.env.SOLMATES_ADMIN_PASSWORD;
+        if (!solmatesClient) {
+          const { SolmatesClient } = require('./solmates');
+          let adminId = process.env.SOLMATES_ADMIN_ID;
+          let password = process.env.SOLMATES_ADMIN_PASSWORD;
 
-        if (!adminId || !password) {
-          const cfgSnap = await db.ref('config/solmates').once('value');
-          const cfg = cfgSnap.val();
-          if (cfg && cfg.adminId && cfg.password) {
-            adminId = cfg.adminId;
-            password = cfg.password;
+          if (!adminId || !password) {
+            const cfgSnap = await db.ref('config/solmates').once('value');
+            const cfg = cfgSnap.val();
+            if (cfg && cfg.adminId && cfg.password) {
+              adminId = cfg.adminId;
+              password = cfg.password;
+            }
+          }
+
+          if (adminId && password) {
+            solmatesClient = new SolmatesClient(adminId, password);
+            await solmatesClient.login();
           }
         }
 
-        if (adminId && password) {
-          const client = new SolmatesClient(adminId, password);
-          const publishRes = await client.uploadLecture({
+        if (solmatesClient) {
+          const publishRes = await solmatesClient.uploadLecture({
             semester: item.semester,
             subject: item.subject,
             youtubeUrl: youtubeUrl,
-            date: new Date()
+            date: new Date(),
+            customTitle: solmatesClassInfo ? solmatesClassInfo.solmatesTitle : null
           });
           console.log(`[Solmates] Published:`, publishRes);
           await ref.update({
