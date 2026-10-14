@@ -60,6 +60,7 @@ jobs:
           YOUTUBE_REFRESH_TOKEN_3: ${{ secrets.YOUTUBE_REFRESH_TOKEN_3 }}
           SOLMATES_ADMIN_ID: ${{ secrets.SOLMATES_ADMIN_ID }}
           SOLMATES_ADMIN_PASSWORD: ${{ secrets.SOLMATES_ADMIN_PASSWORD }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm start
 
 

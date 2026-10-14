@@ -198,16 +198,17 @@ async function processItem(item) {
     }
   }
 
+  let result = null;
   try {
     if (!skipRecording) {
       await ref.update({ status: 'OPENING_RECORDING', updatedAt: Date.now() });
-    const cookies = await getCookies(item.accountId);
-    const targetKey = item.accountId && item.accountId !== 'default' ? item.accountId : 'teams_creds';
-    const credsSnap = await db.ref('config/' + targetKey).once('value');
-    const creds = credsSnap.val();
+      const cookies = await getCookies(item.accountId);
+      const targetKey = item.accountId && item.accountId !== 'default' ? item.accountId : 'teams_creds';
+      const credsSnap = await db.ref('config/' + targetKey).once('value');
+      const creds = credsSnap.val();
 
-    await ref.update({ status: 'RECORDING', updatedAt: Date.now() });
-    const result = await recordClass(item.url, outputPath, cookies, { 
+      await ref.update({ status: 'RECORDING', updatedAt: Date.now() });
+      result = await recordClass(item.url, outputPath, cookies, { 
       maxMs: item.maxMs || MAX_MS,
       resumeTime: item.resumeTime || 0,
       creds: creds,
@@ -304,6 +305,7 @@ async function processItem(item) {
       videoTitle = item.title || `Teams Class - ${new Date().toLocaleDateString('en-IN')}`;
     }
 
+    const workerLockId = `queue_${item.id}_${Date.now()}`;
     let ytResult = null;
     try {
       await acquireUploadLock(db, workerLockId);
