@@ -760,8 +760,9 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                 const hardLobby = lowerText.includes('someone will let you in') || 
                                   lowerText.includes('we\'ve let people in the meeting know you\'re waiting') ||
                                   lowerText.includes('when the meeting starts, we\'ll let people know') ||
-                                  lowerText.includes('hi, raj. someone will let you in');
-                if (hardLobby) return false;
+                                  lowerText.includes('let you in when the meeting starts') ||
+                                  lowerText.includes('waiting in the lobby');
+                if (hardLobby) return 'in_lobby';
                 
                 // If we can see a running timer (format mm:ss like 00:26, 01:41) AND a Leave button, we are IN
                 const hasTimer = /(?:\d{2}:\d{2}|--:--)/.test(text);
@@ -800,6 +801,8 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         if (isAdmitted === true) {
             admitted = true;
             break;
+        } else if (isAdmitted === 'in_lobby') {
+            console.log('[DEBUG] ⏳ Successfully in meeting lobby. Waiting for organizer to admit...');
         } else if (isAdmitted === 'denied') {
             console.log('[DEBUG] ❌ Organizer explicitly denied access to the meeting. Exiting lobby wait loop.');
             break;
@@ -896,14 +899,16 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             }
         } catch(e) {}
 
-        // Check if prejoin modal / Join now button is visible during lobby loop
-        try {
-            const prejoinJoinNow = page.locator('button[data-tid="prejoin-join-button"], button:has-text("Join now")').first();
-            if (await prejoinJoinNow.isVisible({ timeout: 1500 })) {
-                console.log('[DEBUG] Detected "Join now" button in lobby loop! Ensuring mute and clicking...');
-                await handlePrejoinMuteAndJoin(page);
-            }
-        } catch(e) {}
+        // Check if prejoin modal / Join now button is visible during lobby loop (ONLY if not already waiting in lobby)
+        if (isAdmitted !== 'in_lobby') {
+            try {
+                const prejoinJoinNow = page.locator('button[data-tid="prejoin-join-button"], button:has-text("Join now")').first();
+                if (await prejoinJoinNow.isVisible({ timeout: 1500 })) {
+                    console.log('[DEBUG] Detected "Join now" button in lobby loop! Ensuring mute and clicking...');
+                    await handlePrejoinMuteAndJoin(page);
+                }
+            } catch(e) {}
+        }
 
         // Capture live screenshot to Firebase onFrame & save local preview
         try {
