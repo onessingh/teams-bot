@@ -133,10 +133,22 @@ async function performInlineLogin(page, creds) {
       'input[placeholder*="phone" i]'
     ];
 
-    let emailFound = await findInputInPageOrFrames(targetPage, emailSelectors);
-    if (!emailFound && targetPage !== page) {
-      emailFound = await findInputInPageOrFrames(page, emailSelectors);
-      if (emailFound) targetPage = page;
+    let emailFound = null;
+    for (let attempt = 0; attempt < 12; attempt++) {
+      for (const p of context.pages()) {
+        const u = p.url().toLowerCase();
+        if (p !== page && (u.includes('login.') || u.includes('microsoft') || u.includes('live.com'))) {
+          targetPage = p;
+          break;
+        }
+      }
+      emailFound = await findInputInPageOrFrames(targetPage, emailSelectors);
+      if (!emailFound && targetPage !== page) {
+        emailFound = await findInputInPageOrFrames(page, emailSelectors);
+        if (emailFound) targetPage = page;
+      }
+      if (emailFound) break;
+      await page.waitForTimeout(1000);
     }
 
     if (emailFound) {
@@ -541,11 +553,81 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         }
     } catch(e) {}
 
-    // 2. Pre-join screen (Turn off Mic/Cam, Click Join Now)
+    // Helper: Turn off camera, mute microphone, and click "Join now"
+    async function handlePrejoinMuteAndJoin(p) {
+        // Ensure camera is OFF
+        try {
+            console.log('[DEBUG] Turning off Camera on prejoin...');
+            await p.evaluate(() => {
+                const camInput = document.querySelector('input[data-tid="toggle-video"]');
+                if (camInput && camInput.checked) {
+                    camInput.click();
+                } else {
+                    const camWrapper = document.querySelector('[data-tid="toggle-video"], button[aria-label*="camera" i], button[aria-label*="video" i]');
+                    if (camWrapper && (camWrapper.getAttribute('aria-checked') === 'true' || camWrapper.checked)) {
+                        camWrapper.click();
+                    }
+                }
+            });
+            await p.waitForTimeout(1000);
+        } catch(e) {
+            console.log('[DEBUG] Cam toggle error on prejoin', e.message);
+        }
+
+        // Ensure mic is MUTED
+        try {
+            console.log('[DEBUG] Turning off Mic on prejoin...');
+            await p.evaluate(() => {
+                const micInput = document.querySelector('input[data-tid="toggle-mute"]');
+                if (micInput && micInput.checked) {
+                    micInput.click();
+                } else {
+                    const micWrapper = document.querySelector('[data-tid="toggle-mute"], button[aria-label*="mic" i], button[aria-label*="mute" i]');
+                    if (micWrapper && (micWrapper.getAttribute('aria-checked') === 'true' || micWrapper.checked)) {
+                        micWrapper.click();
+                    }
+                }
+            });
+            await p.waitForTimeout(1000);
+        } catch(e) {
+            console.log('[DEBUG] Mic toggle error on prejoin', e.message);
+        }
+
+        console.log('[DEBUG] Clicking "Join now" with pointer event dispatch...');
+        await p.evaluate(() => {
+            const btn = document.getElementById('prejoin-join-button') || document.querySelector('button[data-tid="prejoin-join-button"], button[data-tid="join-button"], button:has-text("Join now")');
+            if (btn) {
+                btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
+                btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                btn.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true }));
+                btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+                btn.click();
+            }
+        });
+
+        const joinBtn = p.locator('button[data-tid="prejoin-join-button"], button[data-tid="join-button"], button:has-text("Join now")').first();
+        try {
+            if (await joinBtn.isVisible({ timeout: 4000 })) {
+                await joinBtn.click({ timeout: 5000, force: true });
+                await p.waitForTimeout(2000);
+                if (await joinBtn.isVisible({ timeout: 1000 })) {
+                    console.log('[DEBUG] Join button still visible, trying Enter key...');
+                    await joinBtn.focus();
+                    await p.keyboard.press('Enter');
+                }
+            }
+        } catch(e) {}
+    }
+
+    // 2. Pre-join screen (Turn off Mic/Cam, Click Join Now, or click inline Chat Join banner)
     try {
-        // Wait for pre-join screen to load
-        await page.waitForSelector('button[data-tid="prejoin-join-button"], button[data-tid="join-button"], button:has-text("Join now")', { timeout: 30000 });
-        console.log('[DEBUG] Pre-join screen loaded.');
+        // Wait for pre-join screen OR inline chat Join button to load
+        try {
+            await page.waitForSelector('button[data-tid="prejoin-join-button"], button[data-tid="join-button"], button:has-text("Join now"), button:has-text("Join"), [data-tid*="join-button"]', { timeout: 25000 });
+            console.log('[DEBUG] Pre-join screen or meeting button loaded.');
+        } catch(e) {
+            console.log('[DEBUG] Initial join button wait timed out. Checking current page elements...');
+        }
         
         await page.waitForTimeout(3000); // Give toggles time to initialize state
         // Attempt to clear any Unified Consent or cookie popups
@@ -593,7 +675,6 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             console.log('[DEBUG] Consent iframe handling error or not present:', e.message);
         }
 
-
         // CRITICAL FIX FOR SOL STUDENT ACCOUNTS:
         // If session cookies are expired, Teams shows a guest name input field.
         // SOL meetings REJECT guest join! We MUST perform inline login instead of joining as Guest.
@@ -613,7 +694,6 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                 
                 // If inline login was attempted and left a login modal/iframe on screen, wait or close it
                 if (!loggedIn) {
-                    // Try to close any open login popover/iframe if user could not log in
                     try {
                         const closeLoginBtn = page.locator('button[aria-label*="Close" i], button[title*="Close" i], [data-tid*="close"]').first();
                         if (await closeLoginBtn.isVisible({ timeout: 1000 })) {
@@ -633,72 +713,23 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             }
         } catch (e) {}
 
-        // Ensure camera is OFF
+        // Check if Teams loaded into the Chat channel view with an ongoing meeting banner ("Join" button)
         try {
-            console.log('[DEBUG] Turning off Camera on prejoin...');
-            await page.evaluate(() => {
-                const camInput = document.querySelector('input[data-tid="toggle-video"]');
-                if (camInput && camInput.checked) {
-                    camInput.click();
-                } else {
-                    const camWrapper = document.querySelector('[data-tid="toggle-video"], button[aria-label*="camera" i], button[aria-label*="video" i]');
-                    if (camWrapper && (camWrapper.getAttribute('aria-checked') === 'true' || camWrapper.checked)) {
-                        camWrapper.click();
-                    }
-                }
-            });
-            await page.waitForTimeout(1000);
-        } catch(e) {
-            console.log('[DEBUG] Cam toggle error on prejoin', e.message);
-        }
-
-        // Ensure mic is MUTED
-        try {
-            console.log('[DEBUG] Turning off Mic on prejoin...');
-            await page.evaluate(() => {
-                const micInput = document.querySelector('input[data-tid="toggle-mute"]');
-                if (micInput && micInput.checked) {
-                    micInput.click();
-                } else {
-                    const micWrapper = document.querySelector('[data-tid="toggle-mute"], button[aria-label*="mic" i], button[aria-label*="mute" i]');
-                    if (micWrapper && (micWrapper.getAttribute('aria-checked') === 'true' || micWrapper.checked)) {
-                        micWrapper.click();
-                    }
-                }
-            });
-            await page.waitForTimeout(1000);
-        } catch(e) {
-            console.log('[DEBUG] Mic toggle error on prejoin', e.message);
-        }
-
-        console.log('[DEBUG] Clicking "Join now" with pointer event dispatch...');
-        await page.evaluate(() => {
-            const btn = document.getElementById('prejoin-join-button') || document.querySelector('button[data-tid="prejoin-join-button"], button[data-tid="join-button"]');
-            if (btn) {
-                btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
-                btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-                btn.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true }));
-                btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
-                btn.click();
+            const chatJoinBtn = page.locator('button[data-tid*="chat-calling-join"], button[data-tid*="calling-join"], [data-tid*="channel-meeting-join-button"], button:has-text("Join"):not(:has-text("Join now"))').first();
+            if (await chatJoinBtn.isVisible({ timeout: 2500 })) {
+                console.log('[DEBUG] Found inline chat "Join" meeting banner! Clicking to launch call prejoin/stage...');
+                await chatJoinBtn.click({ force: true });
+                await page.waitForTimeout(3000);
             }
-        });
-
-        const joinBtn = page.locator('button[data-tid="prejoin-join-button"], button[data-tid="join-button"], button:has-text("Join now")').first();
-        try {
-            await joinBtn.click({ timeout: 5000, force: true });
         } catch(e) {}
-        
-        await page.waitForTimeout(2000);
-        if (await joinBtn.isVisible()) {
-             console.log('[DEBUG] Join button still visible, trying Enter key...');
-             await joinBtn.focus();
-             await page.keyboard.press('Enter');
-        }
+
+        // Handle prejoin mute and join now
+        await handlePrejoinMuteAndJoin(page);
     } catch(e) {
-        console.log('[DEBUG] Pre-join button not found, maybe already joined or login blocked.', e.message);
+        console.log('[DEBUG] Pre-join button error or already admitted:', e.message);
     }
 
-    await page.waitForTimeout(10000);
+    await page.waitForTimeout(5000);
 
     // Wait for Lobby to clear BEFORE setting up UI and Recording
     console.log('[DEBUG] Waiting to be admitted from lobby...');
@@ -854,7 +885,36 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             }
         } catch(e) {}
 
-        await page.waitForTimeout(15000);
+        // Check if Teams web chat is displayed with an inline "Join" button in the active call banner
+        try {
+            const inlineJoin = page.locator('button[data-tid*="chat-calling-join"], button[data-tid*="calling-join"], [data-tid*="channel-meeting-join-button"], button:has-text("Join"):not(:has-text("Join now"))').first();
+            if (await inlineJoin.isVisible({ timeout: 1500 })) {
+                console.log('[DEBUG] Detected inline chat "Join" button in lobby loop! Clicking to launch meeting...');
+                await inlineJoin.click({ force: true });
+                await page.waitForTimeout(3000);
+                await handlePrejoinMuteAndJoin(page);
+            }
+        } catch(e) {}
+
+        // Check if prejoin modal / Join now button is visible during lobby loop
+        try {
+            const prejoinJoinNow = page.locator('button[data-tid="prejoin-join-button"], button:has-text("Join now")').first();
+            if (await prejoinJoinNow.isVisible({ timeout: 1500 })) {
+                console.log('[DEBUG] Detected "Join now" button in lobby loop! Ensuring mute and clicking...');
+                await handlePrejoinMuteAndJoin(page);
+            }
+        } catch(e) {}
+
+        // Capture live screenshot to Firebase onFrame & save local preview
+        try {
+            const shot = await page.screenshot({ type: 'jpeg', quality: 40 });
+            if (options.onFrame) await options.onFrame('data:image/jpeg;base64,' + shot.toString('base64'));
+            const accountTag = (options.creds && (options.creds.name || options.creds.accountId)) ? (options.creds.name || options.creds.accountId).replace(/[^a-zA-Z0-9]/g, '_') : 'user';
+            const screenPath = path.join(OUTPUT_DIR, `lobby_${accountTag}_latest.jpg`);
+            fs.writeFileSync(screenPath, shot);
+        } catch(se) {}
+
+        await page.waitForTimeout(10000);
         initLobbyWaitLoops++;
     }
 
@@ -1531,4 +1591,5 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
   }
 }
 
+recordLiveClass.performInlineLogin = performInlineLogin;
 module.exports = recordLiveClass;

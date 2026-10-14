@@ -37,8 +37,8 @@ async function doTeamsLogin(db) {
 
         // Password
         try {
-            const pwdSelector = '#i0118, input[name="passwd"]';
-            const bypassSelector = '#idA_PWD_SwitchToPassword, #idA_PWD_SwitchToCredPicker, a:has-text("password"), button:has-text("password")';
+            const pwdSelector = '#passwordEntry, #i0118, input[name="passwd"], input[type="password"]';
+            const bypassSelector = '#idA_PWD_SwitchToPassword, #idA_PWD_SwitchToCredPicker, a:has-text("password"), button:has-text("password"), span:has-text("Use your password")';
 
             console.log("Checking if 'Use your password' bypass is needed (waiting 3s)...");
             try {
