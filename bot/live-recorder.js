@@ -1296,8 +1296,12 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             const buf = await page.screenshot({ type: 'jpeg', quality: 30 });
             await options.onFrame('data:image/jpeg;base64,' + buf.toString('base64'));
         }
-      } catch (err) {}
       loopCount++;
+
+      if (options.shouldStop && await options.shouldStop().catch(() => false)) {
+        console.log('🛑 Remote stop signal received from Firebase. Exiting recording loop cleanly!');
+        break;
+      }
 
       // Anti-idle
       if (loopCount % 20 === 0) {
@@ -1509,7 +1513,20 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                 (text.includes('chat') && !hasCallStage)
             );
             
-            return { ended, currentCount, inLobby, hasCallStage, inChatView };
+            // Waiting for others to join screen (Displayed when bot is alone on call stage)
+            const isWaitingForOthers = 
+              text.includes("waiting for others to join") ||
+              text.includes("waiting for other people to join") ||
+              text.includes("waiting for others") ||
+              text.includes("someone should be here soon") ||
+              text.includes("you're the only one here") ||
+              text.includes("you are the only person here");
+
+            if (isWaitingForOthers) {
+              currentCount = 1;
+            }
+
+            return { ended, currentCount, inLobby, hasCallStage, inChatView, isWaitingForOthers };
         });
         
         let meetingEnded = stats.ended;
@@ -1537,10 +1554,11 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             callDisconnectedCount = 0;
         }
 
-        // 3. Bot is alone in meeting (1 participant)
-        if (currentCount === 1 && loopCount > 4) {
+        // 3. Bot is alone in meeting (Waiting for others screen OR 1 participant OR 0 participants on stage)
+        const isAlone = stats.isWaitingForOthers || currentCount === 1 || (currentCount === 0 && loopCount > 6 && stats.hasCallStage && !stats.inLobby);
+        if (isAlone && loopCount > 4) {
             aloneCount++;
-            console.log(`[DEBUG] Bot is alone in meeting (1 participant) (${aloneCount}/3 checks - 45s)...`);
+            console.log(`[DEBUG] Bot is alone in meeting (WaitingForOthers: ${!!stats.isWaitingForOthers}, count: ${currentCount}) (${aloneCount}/3 checks - 45s)...`);
             if (aloneCount >= 3) {
                 console.log('🎓 Bot has been alone in meeting for >45 seconds. Stopping recording.');
                 meetingEnded = true;
@@ -1550,7 +1568,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         }
 
         // 4. Almost empty meeting (<= 2 participants left when class was larger)
-        if (maxParticipants >= 5 && currentCount > 0 && currentCount <= 2 && loopCount > 6) {
+        if (maxParticipants >= 5 && currentCount <= 2 && loopCount > 6) {
             smallMeetingDropCount++;
             console.log(`[DEBUG] Almost empty meeting: only ${currentCount} participants left (Peak: ${maxParticipants}) (${smallMeetingDropCount}/8 checks - 2 mins)...`);
             if (smallMeetingDropCount >= 8) {
@@ -1563,10 +1581,11 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
 
         // 5. USER REQUESTED 5-MINUTE MASS EXODUS RULE:
         // "achank se bahot sare log left ho jaaye to 5 min baad recording band kar dena"
-        // If peak attendance was >= 10, and count drops to <= 25% of peak OR <= 5 participants:
-        const isMassExodus = (maxParticipants >= 10 && currentCount > 0 && (
+        // If peak attendance was >= 10, and count drops to <= 25% of peak OR <= 5 participants (or 0):
+        const isMassExodus = (maxParticipants >= 10 && (
             currentCount <= Math.max(3, Math.floor(maxParticipants * 0.25)) ||
-            (maxParticipants >= 15 && currentCount <= 5)
+            (maxParticipants >= 15 && currentCount <= 5) ||
+            currentCount === 0
         ));
 
         if (isMassExodus && loopCount > 8) {
