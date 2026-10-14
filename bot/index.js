@@ -198,7 +198,6 @@ async function processItem(item) {
     }
   }
 
-  let result = null;
   try {
     if (!skipRecording) {
       await ref.update({ status: 'OPENING_RECORDING', updatedAt: Date.now() });
