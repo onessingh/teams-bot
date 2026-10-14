@@ -1,0 +1,46 @@
+name: Publish Lecture to Solmates
+
+on:
+  workflow_dispatch:
+    inputs:
+      semester:
+        description: 'Semester (1, 2, 3, or 4)'
+        required: true
+        default: '1'
+      subject:
+        description: 'Subject Name (e.g. INFORMATION TECHNOLOGY MANAGEMENT or Finance: SAPM)'
+        required: true
+      youtube_url:
+        description: 'YouTube Video URL (e.g. https://youtu.be/...)'
+        required: true
+      date:
+        description: 'Lecture Date (YYYY-MM-DD or leave blank for today)'
+        required: false
+        default: ''
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Publish Lecture to Solmates
+        env:
+          SOLMATES_ADMIN_ID: ${{ secrets.SOLMATES_ADMIN_ID }}
+          SOLMATES_ADMIN_PASSWORD: ${{ secrets.SOLMATES_ADMIN_PASSWORD }}
+          FIREBASE_SERVICE_ACCOUNT_B64: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_B64 }}
+          FIREBASE_DB_URL: ${{ secrets.FIREBASE_DB_URL }}
+          INPUT_SEMESTER: ${{ inputs.semester }}
+          INPUT_SUBJECT: ${{ inputs.subject }}
+          INPUT_URL: ${{ inputs.youtube_url }}
+          INPUT_DATE: ${{ inputs.date }}
+        run: node scratch/publish_lecture.js
