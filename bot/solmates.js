@@ -140,7 +140,20 @@ class SolmatesClient {
 
     const normSubj = normalize(subjPart);
 
-    // Look inside each specialisation group
+    // 1. Direct match on root folders (e.g. "ADDITIONAL COURSES" or direct subject)
+    const directMatch = activeFolders.find(f => {
+      const nf = normalize(f.name);
+      return nf === normSubj || nf.includes(normSubj) || normSubj.includes(nf);
+    });
+    if (directMatch) {
+      const subRes = await apiRequest(`/sol/folders/recorded-class/${sem}?parentId=${directMatch.id}`);
+      if (!subRes || !subRes.data || subRes.data.length === 0) {
+        // Direct folder has no subfolders, items are placed directly here!
+        return directMatch;
+      }
+    }
+
+    // 2. Look inside each specialisation group
     for (const group of activeFolders) {
       // If user specified spec (e.g. "Finance" or "Core"), check if group matches
       if (specPart) {
