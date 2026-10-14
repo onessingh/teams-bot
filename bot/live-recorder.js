@@ -152,27 +152,44 @@ async function performInlineLogin(page, creds) {
       return false;
     }
 
-    // 4. Check for password switch/bypass
-    await targetPage.waitForTimeout(2000);
-    try {
-      const bypassSelectors = [
-        '#idA_PWD_SwitchToPassword',
-        '#idA_PWD_SwitchToCredPicker',
-        'a:has-text("Use your password")',
-        'button:has-text("Use your password")'
-      ];
-      for (const sel of bypassSelectors) {
-        const bypass = targetPage.locator(sel).first();
-        if (await bypass.isVisible({ timeout: 1500 })) {
-          console.log(`[DEBUG] Clicking bypass button (${sel})...`);
-          await bypass.click({ force: true });
-          await targetPage.waitForTimeout(2000);
-          break;
-        }
-      }
-    } catch(e){}
+    // 4. Check for password switch/bypass (across targetPage and all its frames)
+    console.log('[DEBUG] Waiting for password screen or bypass button...');
+    const bypassSelectors = [
+      '#idA_PWD_SwitchToPassword',
+      '#idA_PWD_SwitchToCredPicker',
+      'a:has-text("Use your password")',
+      'button:has-text("Use your password")',
+      'span:has-text("Use your password")'
+    ];
 
-    // 5. Password Input
+    // Wait up to 8s for bypass button or password field
+    for (let attempt = 0; attempt < 8; attempt++) {
+      let bypassClicked = false;
+      for (const p of [targetPage, page, ...targetPage.context().pages()]) {
+        for (const frame of [p, ...p.frames()]) {
+          for (const sel of bypassSelectors) {
+            try {
+              const bypass = frame.locator(sel).first();
+              if (await bypass.isVisible({ timeout: 500 })) {
+                console.log(`[DEBUG] Found bypass button (${sel}) in frame. Clicking...`);
+                await bypass.click({ force: true });
+                bypassClicked = true;
+                break;
+              }
+            } catch(e){}
+          }
+          if (bypassClicked) break;
+        }
+        if (bypassClicked) break;
+      }
+      if (bypassClicked) {
+        await targetPage.waitForTimeout(2000);
+        break;
+      }
+      await targetPage.waitForTimeout(1000);
+    }
+
+    // 5. Password Input (Poll across all pages and frames for up to 10 seconds)
     const pwdSelectors = [
       'input[type="password"]',
       'input[name="passwd"]',
@@ -180,7 +197,19 @@ async function performInlineLogin(page, creds) {
       'input[placeholder*="password" i]'
     ];
 
-    let pwdFound = await findInputInPageOrFrames(targetPage, pwdSelectors);
+    let pwdFound = null;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      for (const p of [targetPage, page, ...targetPage.context().pages()]) {
+        pwdFound = await findInputInPageOrFrames(p, pwdSelectors);
+        if (pwdFound) {
+          targetPage = p;
+          break;
+        }
+      }
+      if (pwdFound) break;
+      await targetPage.waitForTimeout(1000);
+    }
+
     if (pwdFound) {
       console.log(`[DEBUG] Found password input (${pwdFound.sel}). Entering password...`);
       await pwdFound.loc.focus();
@@ -206,6 +235,25 @@ async function performInlineLogin(page, creds) {
         await targetPage.waitForTimeout(3000);
       }
     } catch(e){}
+
+    // 7. Save fresh cookies & storageState to Firebase so next time it is already authenticated!
+    try {
+      const context = page.context();
+      const freshCookies = await context.cookies();
+      const freshStorageState = await context.storageState();
+      const admin = require('firebase-admin');
+      if (admin.apps.length) {
+        const targetAccount = (creds && creds.name) ? creds.name : 'teams_creds';
+        await admin.database().ref(`config/${targetAccount}`).update({
+          cookies: freshCookies,
+          storageState: JSON.stringify(freshStorageState),
+          updatedAt: Date.now()
+        });
+        console.log(`[DEBUG] ✅ Saved fresh session to Firebase for ${targetAccount} (${freshCookies.length} cookies)`);
+      }
+    } catch(err) {
+      console.log('[DEBUG] Note on saving fresh session to Firebase:', err.message);
+    }
 
     console.log('[DEBUG] Inline login complete.');
     return true;
@@ -640,6 +688,11 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                 
                 const lowerText = text.toLowerCase();
 
+                // Check if stuck on Microsoft login prompt ("Get a code to sign in", "Use your password")
+                if (lowerText.includes('get a code to sign in') || lowerText.includes('use your password')) {
+                    return 'stuck_login';
+                }
+
                 // Check if stuck on guest pre-join screen ("Type your name", "Enter a name to join")
                 if (lowerText.includes('enter a name to join') || lowerText.includes('type your name')) {
                     return 'stuck_prejoin';
@@ -692,6 +745,35 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         } else if (isAdmitted === 'denied') {
             console.log('[DEBUG] ❌ Organizer explicitly denied access to the meeting. Exiting lobby wait loop.');
             break;
+        } else if (isAdmitted === 'stuck_login') {
+            console.log('[DEBUG] ⚠️ Stuck on Microsoft login prompt during lobby wait. Handling password login...');
+            try {
+                // Click "Use your password"
+                for (const frame of [page, ...page.frames()]) {
+                    const bypass = frame.locator('button:has-text("Use your password"), a:has-text("Use your password"), #idA_PWD_SwitchToPassword').first();
+                    if (await bypass.isVisible({ timeout: 1000 })) {
+                        console.log('[DEBUG] Clicked "Use your password" prompt in lobby wait.');
+                        await bypass.click({ force: true });
+                        await page.waitForTimeout(2000);
+                        break;
+                    }
+                }
+                // Enter password if visible
+                if (options.creds && options.creds.password) {
+                    for (const frame of [page, ...page.frames()]) {
+                        const pwd = frame.locator('input[type="password"], input[name="passwd"]').first();
+                        if (await pwd.isVisible({ timeout: 1500 })) {
+                            console.log('[DEBUG] Filling password in lobby wait prompt...');
+                            await pwd.fill(options.creds.password);
+                            await page.keyboard.press('Enter');
+                            await page.waitForTimeout(3000);
+                            break;
+                        }
+                    }
+                }
+            } catch(e) {
+                console.log('[DEBUG] Error handling stuck_login prompt:', e.message);
+            }
         } else if (isAdmitted === 'stuck_prejoin') {
             stuckPrejoinCount++;
             console.log(`[DEBUG] ⚠️ Stuck on pre-join guest screen (attempt ${stuckPrejoinCount}/4). Filling guest name & clicking Join now...`);
