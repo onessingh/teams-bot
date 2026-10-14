@@ -52,6 +52,10 @@ function apiRequest(path, method = 'GET', body = null, token = null) {
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
+    if (method.toUpperCase() === 'GET') {
+      url.searchParams.set('_a', Date.now().toString());
+      headers['Cache-Control'] = 'no-cache';
+    }
     let payload = null;
     if (body) {
       payload = JSON.stringify(body);

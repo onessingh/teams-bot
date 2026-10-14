@@ -50,6 +50,7 @@ async function main() {
   }
 
   console.log('\n🎉 ALL DONE! Check solmates.in under Semester 4 -> ADDITIONAL COURSES!');
+  process.exit(0);
 }
 
 main().catch(err => {
