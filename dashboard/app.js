@@ -402,7 +402,7 @@ liveAddBtn.addEventListener('click', async () => {
             url: url,
             subject: subject,
             semester: semester,
-            title: 'Live Class: ' + new Date().toLocaleString(),
+            title: (semester && subject) ? `Sem-${semester}: ${subject}` : (subject || (semester ? `Sem-${semester}` : '') || ('Live Class: ' + new Date().toLocaleString())),
             status: 'WAITING',
             addedAt: Date.now(),
             scheduledTime: scheduledTime,
