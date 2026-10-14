@@ -61,6 +61,8 @@ jobs:
           YOUTUBE_CLIENT_SECRET_3: ${{ secrets.YOUTUBE_CLIENT_SECRET_3 }}
           YOUTUBE_REFRESH_TOKEN_3: ${{ secrets.YOUTUBE_REFRESH_TOKEN_3 }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOLMATES_ADMIN_ID: ${{ secrets.SOLMATES_ADMIN_ID }}
+          SOLMATES_ADMIN_PASSWORD: ${{ secrets.SOLMATES_ADMIN_PASSWORD }}
         run: node bot/live-index.js
 
       - name: Save recorded video artifact if upload failed

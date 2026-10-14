@@ -304,6 +304,41 @@ async function processItem(item) {
     });
     console.log(`✅ ${item.title} uploaded: ${finalYoutubeUrl}`);
 
+    // Auto-publish to solmates.in
+    if (finalYoutubeUrl && item.semester && item.subject) {
+      try {
+        console.log(`[Solmates] Auto-publishing to solmates.in for Sem ${item.semester} - ${item.subject}...`);
+        const { SolmatesClient } = require('./solmates');
+        let adminId = process.env.SOLMATES_ADMIN_ID;
+        let password = process.env.SOLMATES_ADMIN_PASSWORD;
+
+        if (!adminId || !password) {
+          const cfgSnap = await db.ref('config/solmates').once('value');
+          const cfg = cfgSnap.val();
+          if (cfg && cfg.adminId && cfg.password) {
+            adminId = cfg.adminId;
+            password = cfg.password;
+          }
+        }
+
+        if (adminId && password) {
+          const client = new SolmatesClient(adminId, password);
+          const solRes = await client.uploadLecture({
+            semester: item.semester,
+            subject: item.subject,
+            youtubeUrl: finalYoutubeUrl,
+            date: new Date()
+          });
+          await ref.update({ solmates_published: true, solmates_title: solRes.title });
+          console.log(`🎉 [Solmates] Successfully published to solmates.in: "${solRes.title}"`);
+        } else {
+          console.log('[Solmates] Credentials not found in env or Firebase. Skipping solmates publish.');
+        }
+      } catch (solErr) {
+        console.error('[Solmates] Failed to publish to solmates.in:', solErr.message);
+      }
+    }
+
     if (result && result.wasSplit) {
       const nextPartNum = (item.part || 1) + 1;
       const baseTitle = (item.title || safeName).replace(/ \(Part \d+\)$/, '');

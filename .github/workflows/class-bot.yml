@@ -58,6 +58,8 @@ jobs:
           YOUTUBE_CLIENT_ID_3: ${{ secrets.YOUTUBE_CLIENT_ID_3 }}
           YOUTUBE_CLIENT_SECRET_3: ${{ secrets.YOUTUBE_CLIENT_SECRET_3 }}
           YOUTUBE_REFRESH_TOKEN_3: ${{ secrets.YOUTUBE_REFRESH_TOKEN_3 }}
+          SOLMATES_ADMIN_ID: ${{ secrets.SOLMATES_ADMIN_ID }}
+          SOLMATES_ADMIN_PASSWORD: ${{ secrets.SOLMATES_ADMIN_PASSWORD }}
         run: npm start
 
 
