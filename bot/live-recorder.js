@@ -1558,32 +1558,33 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         const isAlone = stats.isWaitingForOthers || currentCount === 1 || (currentCount === 0 && loopCount > 6 && stats.hasCallStage && !stats.inLobby);
         if (isAlone) {
             aloneCount++;
-            // Check if a real class actually took place:
-            // 1) Peak attendance reached >= 8 students (normal batch)
-            // 2) OR peak attendance reached >= 5 students AND class ran for > 10 minutes (loopCount > 40)
-            // 3) OR a real teacher was identified (lockedTeacher !== null)
+            const elapsedMins = (Date.now() - startTime) / (60 * 1000);
+
+            // USER RULE:
+            // "aadha ghanta laga do n aadhe ghante baad jab bhi waiting wala aaye left kar dena
+            // i mean aadhe ghante baad jab bhi se matlab 2 ghante 1:30 ghante ya 3 jab bhi aaye wapis"
+            //
+            // If recording has been active for >= 30 mins (e.g. 45m, 1h, 1.5h, 2h, 3h):
+            // Whenever "Waiting for others" appears, exit in 45s!
+            // Also, if a real class happened earlier (peak >= 8 or teacher locked), exit in 45s!
             const hasClassActuallyHappened = (maxParticipants >= 8) || 
                                              (maxParticipants >= 5 && loopCount > 40) || 
                                              (lockedTeacher !== null && loopCount > 20);
 
-            if (hasClassActuallyHappened) {
-                // Real class has taken place, now EVERYONE HAS LEFT!
-                console.log(`[DEBUG] All participants have left the meeting (WaitingForOthers: ${!!stats.isWaitingForOthers}, count: ${currentCount}) (${aloneCount}/3 checks - 45s)...`);
+            const canExitAlone = (elapsedMins >= 30) || hasClassActuallyHappened;
+
+            if (canExitAlone) {
+                // After 30 mins OR after real class happened: Exit cleanly!
+                console.log(`[DEBUG] Waiting/Alone screen detected after ${elapsedMins.toFixed(1)} mins (WaitingForOthers: ${!!stats.isWaitingForOthers}, count: ${currentCount}) (${aloneCount}/3 checks - 45s)...`);
                 if (aloneCount >= 3) {
-                    console.log('🎓 Class finished! All participants left and bot was alone for >45 seconds. Stopping recording.');
+                    console.log(`🎓 Meeting/Class finished! Bot alone on stage after ${elapsedMins.toFixed(1)} mins. Stopping recording.`);
                     meetingEnded = true;
                 }
             } else {
-                // Class hasn't really started yet! 
-                // Either bot joined first, or 1-2 students entered and left before teacher arrived.
-                // Keep waiting for real class to begin (up to 30 mins).
+                // Within first 30 mins and no class yet:
+                // Teacher might be late or students joining/leaving. Keep waiting!
                 if (aloneCount % 4 === 0) {
-                    const waitedMins = (aloneCount * 15 / 60).toFixed(1);
-                    console.log(`[DEBUG] ⏳ Waiting for class to start: Stray join/leave before class (${waitedMins}m / 30m elapsed, waiting for teacher/class)...`);
-                }
-                if (aloneCount >= 120) { // 30 minutes of empty room before class ever started
-                    console.log('⏰ No real class started after 30 minutes. Class cancelled or rescheduled. Stopping recording.');
-                    meetingEnded = true;
+                    console.log(`[DEBUG] ⏳ Waiting for class to start (${elapsedMins.toFixed(1)}m / 30.0m elapsed). Teacher late or early join, keeping recording active...`);
                 }
             }
         } else if (currentCount > 1) {
