@@ -133,6 +133,91 @@ async function waitForPlayback(page, timeoutMs = 15000) {
   return null;
 }
 
+async function attemptDirectDownload(page, outputPath) {
+  console.log('🔍 Checking if direct Download option is available on OneDrive / SharePoint / Stream...');
+
+  const downloadSelectors = [
+    'button[data-automationid="downloadCommand"]',
+    'button[name="Download" i]',
+    'button[aria-label="Download" i]',
+    'button[title="Download" i]',
+    'button:has-text("Download")',
+    'a[data-automationid="downloadCommand"]',
+    'a[name="Download" i]',
+    'a[aria-label="Download" i]',
+    'a:has-text("Download")',
+    '[role="menuitem"]:has-text("Download")',
+    'button:has([data-icon-name="Download"])'
+  ];
+
+  // 1. Direct check on visible toolbar
+  for (const sel of downloadSelectors) {
+    try {
+      const loc = page.locator(sel).first();
+      if (await loc.isVisible({ timeout: 1500 })) {
+        console.log(`⚡ Found direct Download button: "${sel}"! Triggering download...`);
+        const [ download ] = await Promise.all([
+          page.waitForEvent('download', { timeout: 60000 }),
+          loc.click()
+        ]);
+        if (download) {
+          console.log(`⬇️ Downloading file directly: ${download.suggestedFilename()}...`);
+          await download.saveAs(outputPath);
+          if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 1024 * 1024) {
+            console.log(`🎉 Direct download complete! Size: ${(fs.statSync(outputPath).size / (1024 * 1024)).toFixed(2)} MB`);
+            return true;
+          }
+        }
+      }
+    } catch (e) {
+      console.log(`[Direct Download attempt with ${sel} skipped: ${e.message}]`);
+    }
+  }
+
+  // 2. Check if hidden under "More" / "..." overflow menu
+  const moreSelectors = [
+    'button[data-automationid="moreActions"]',
+    'button[aria-label="More" i]',
+    'button[aria-label="See more" i]',
+    'button[aria-label="More commands" i]',
+    'button[title="More commands" i]',
+    'button:has([data-icon-name="More"])'
+  ];
+
+  for (const mSel of moreSelectors) {
+    try {
+      const mLoc = page.locator(mSel).first();
+      if (await mLoc.isVisible({ timeout: 1000 })) {
+        console.log(`🔍 Checking overflow menu "${mSel}" for Download option...`);
+        await mLoc.click();
+        await page.waitForTimeout(1000);
+
+        for (const dSel of downloadSelectors) {
+          const dLoc = page.locator(dSel).first();
+          if (await dLoc.isVisible({ timeout: 1000 })) {
+            console.log(`⚡ Found Download button in overflow menu: "${dSel}"!`);
+            const [ download ] = await Promise.all([
+              page.waitForEvent('download', { timeout: 60000 }),
+              dLoc.click()
+            ]);
+            if (download) {
+              console.log(`⬇️ Downloading file directly: ${download.suggestedFilename()}...`);
+              await download.saveAs(outputPath);
+              if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 1024 * 1024) {
+                console.log(`🎉 Direct download complete! Size: ${(fs.statSync(outputPath).size / (1024 * 1024)).toFixed(2)} MB`);
+                return true;
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  console.log('[INFO] Direct download button not present or not accessible. Proceeding with real-time video capture.');
+  return false;
+}
+
 async function recordClass(url, outputPath, cookies, options = {}) {
   const maxMs = options.maxMs || Number(process.env.MAX_RECORDING_MS || 7200000);
   let browser;
@@ -161,7 +246,8 @@ async function recordClass(url, outputPath, cookies, options = {}) {
     });
 
     const context = await browser.newContext({
-      viewport: null
+      viewport: null,
+      acceptDownloads: true
     });
 
     if (Array.isArray(cookies) && cookies.length) {
@@ -264,6 +350,23 @@ async function recordClass(url, outputPath, cookies, options = {}) {
     }
 
     await page.bringToFront();
+    await page.waitForTimeout(3000);
+
+    // ⚡ Attempt direct download first (if account has download permissions e.g. Naveen ID)
+    try {
+      const downloadedDirectly = await attemptDirectDownload(page, outputPath);
+      if (downloadedDirectly) {
+        console.log(`⚡ Direct download succeeded! Skipping real-time screen recording.`);
+        return { 
+          outputPath, 
+          wasSplit: false, 
+          durationRecordedMs: 0, 
+          directDownload: true 
+        };
+      }
+    } catch (dErr) {
+      console.log('[INFO] Direct download attempt skipped:', dErr.message);
+    }
 
     const clicked = await clickPlay(page);
 
