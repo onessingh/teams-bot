@@ -1,7 +1,7 @@
 const { google } = require('googleapis');
 const fs = require('fs');
 
-async function uploadToYouTube(videoPath, subject, onProgress) {
+async function uploadToYouTube(videoPath, subject, onProgress, options = {}) {
     const creds = [
         { id: process.env.YOUTUBE_CLIENT_ID, sec: process.env.YOUTUBE_CLIENT_SECRET, token: process.env.YOUTUBE_REFRESH_TOKEN, name: "Account 1" },
         { id: process.env.YOUTUBE_CLIENT_ID_2, sec: process.env.YOUTUBE_CLIENT_SECRET_2, token: process.env.YOUTUBE_REFRESH_TOKEN_2, name: "Account 2" },
