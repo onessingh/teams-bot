@@ -137,10 +137,10 @@ onValue(ref(db, 'queue'), (snapshot) => {
                     ${item.maxMs ? `<span class="bg-gray-100 px-2 py-0.5 rounded text-gray-600">⏳ ${(item.maxMs/60000).toFixed(0)}m limit</span>` : ''}
                 </div>
                 <div id="elapsed-${item.id}" class="text-xs font-bold text-red-600 mt-2 empty:hidden"></div>
-                ${(item.status === 'RECORDING' && item.live_frame) ? `
+                ${((item.status === 'RECORDING' || item.status === 'WAITING_IN_LOBBY' || item.status === 'IN_LOBBY') && item.live_frame) ? `
                 <div class="mt-3 relative">
-                    <span class="absolute top-2 left-2 bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1 shadow">
-                        <span class="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span> LIVE PREVIEW
+                    <span class="absolute top-2 left-2 ${item.status === 'RECORDING' ? 'bg-red-600' : 'bg-amber-600'} text-white text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1 shadow">
+                        <span class="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span> ${item.status === 'RECORDING' ? 'LIVE PREVIEW' : 'LOBBY PREVIEW'}
                     </span>
                     <img src="${item.live_frame}" class="w-full rounded-lg border border-gray-200 shadow-sm object-cover aspect-video" alt="Live Preview">
                 </div>
@@ -483,10 +483,10 @@ onValue(ref(db, 'live_queue'), (snapshot) => {
                       <span>${item.scheduledTime ? 'Scheduled: ' + new Date(item.scheduledTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Added: ' + new Date(item.addedAt).toLocaleString()}</span>
                   </div>
                   <div id="live-elapsed-${item.id}" class="text-xs font-bold text-red-600 mt-2 empty:hidden"></div>
-                  ${(item.status === 'RECORDING' && item.live_frame) ? `
+                  ${((item.status === 'RECORDING' || item.status === 'WAITING_IN_LOBBY' || item.status === 'IN_LOBBY') && item.live_frame) ? `
                   <div class="mt-3 relative">
-                      <span class="absolute top-2 left-2 bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1 shadow">
-                          <span class="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span> LIVE PREVIEW
+                      <span class="absolute top-2 left-2 ${item.status === 'RECORDING' ? 'bg-red-600' : 'bg-amber-600'} text-white text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1 shadow">
+                          <span class="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span> ${item.status === 'RECORDING' ? 'LIVE PREVIEW' : 'LOBBY PREVIEW'}
                       </span>
                       <img src="${item.live_frame}" class="w-full rounded-lg border border-gray-200 shadow-sm object-cover aspect-video" alt="Live Preview">
                   </div>

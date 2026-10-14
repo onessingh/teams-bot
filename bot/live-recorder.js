@@ -734,6 +734,10 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     // Wait for Lobby to clear BEFORE setting up UI and Recording
     console.log('[DEBUG] Waiting to be admitted from lobby...');
     if (options.onStatus) await options.onStatus('WAITING_IN_LOBBY');
+    try {
+        const initialLobbyShot = await page.screenshot({ type: 'jpeg', quality: 40 });
+        if (options.onFrame) await options.onFrame('data:image/jpeg;base64,' + initialLobbyShot.toString('base64'));
+    } catch(se) {}
     let initLobbyWaitLoops = 0;
     let stuckPrejoinCount = 0;
     let admitted = false;
