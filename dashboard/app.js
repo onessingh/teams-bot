@@ -798,6 +798,7 @@ function populateSubjects(courseId, semId, subjId) {
         courseSelect.addEventListener('change', updateOptions);
     }
     semSelect.addEventListener('change', updateOptions);
+    updateOptions();
 }
 
 populateSubjects('vod-course', 'vod-semester', 'vod-subject');
