@@ -282,9 +282,19 @@ async function processItem(item) {
       await acquireUploadLock(db, workerLockId);
       await ref.update({ status: 'UPLOADING', live_frame: null, upload_progress: 0, updatedAt: Date.now() });
 
+      // Determine Solmates category (Healthcare vs General MBA)
+      const isHealthcare = item.course === 'healthcare' || 
+                           item.category === 'hc-recorded-class' || 
+                           /health|hospital/i.test(item.subject || '') ||
+                           /quantitative methods in healthcare|it in healthcare|innovations in healthcare/i.test(item.subject || '');
+      const solmatesCategory = isHealthcare ? 'hc-recorded-class' : 'recorded-class';
+
       let playlistName = null;
       if (typeof item.subject === 'string' && item.subject.trim()) {
         playlistName = item.subject.trim();
+        if (isHealthcare && !/health|hospital/i.test(playlistName)) {
+          playlistName = `${playlistName} (Healthcare)`;
+        }
         if (item.semester && !playlistName.toLowerCase().includes('sem')) {
           playlistName = `${playlistName} (Sem ${item.semester})`;
         }
@@ -309,9 +319,9 @@ async function processItem(item) {
           if (adminId && password) {
             solmatesClient = new SolmatesClient(adminId, password);
             await solmatesClient.login();
-            solmatesClassInfo = await solmatesClient.getNextClassInfo(item.semester, item.subject, new Date());
+            solmatesClassInfo = await solmatesClient.getNextClassInfo(item.semester, item.subject, new Date(), solmatesCategory);
             videoTitle = solmatesClassInfo.youtubeTitle;
-            console.log(`[YouTube Title from Solmates] "${videoTitle}" (Class #${solmatesClassInfo.nextClassNum})`);
+            console.log(`[YouTube Title from Solmates (${solmatesCategory})] "${videoTitle}" (Class #${solmatesClassInfo.nextClassNum})`);
           }
         } catch (sErr) {
           console.warn('[Solmates Title Prep Warning]:', sErr.message);
@@ -342,7 +352,12 @@ async function processItem(item) {
     // Auto-publish to solmates.in
     if (finalYoutubeUrl && item.semester && item.subject) {
       try {
-        console.log(`[Solmates] Auto-publishing to solmates.in for Sem ${item.semester} - ${item.subject}...`);
+        const isHealthcare = item.course === 'healthcare' || 
+                             item.category === 'hc-recorded-class' || 
+                             /health|hospital/i.test(item.subject || '') ||
+                             /quantitative methods in healthcare|it in healthcare|innovations in healthcare/i.test(item.subject || '');
+        const solmatesCategory = isHealthcare ? 'hc-recorded-class' : 'recorded-class';
+        console.log(`[Solmates] Auto-publishing to solmates.in (${solmatesCategory}) for Sem ${item.semester} - ${item.subject}...`);
         if (!solmatesClient) {
           const { SolmatesClient } = require('./solmates');
           let adminId = process.env.SOLMATES_ADMIN_ID;
@@ -367,10 +382,11 @@ async function processItem(item) {
             subject: item.subject,
             youtubeUrl: finalYoutubeUrl,
             date: new Date(),
-            customTitle: solmatesClassInfo ? solmatesClassInfo.solmatesTitle : null
+            customTitle: solmatesClassInfo ? solmatesClassInfo.solmatesTitle : null,
+            category: solmatesCategory
           });
           await ref.update({ solmates_published: true, solmates_title: solRes.title });
-          console.log(`🎉 [Solmates] Successfully published to solmates.in: "${solRes.title}"`);
+          console.log(`🎉 [Solmates] Successfully published to solmates.in (${solmatesCategory}): "${solRes.title}"`);
         } else {
           console.log('[Solmates] Credentials not found in env or Firebase. Skipping solmates publish.');
         }

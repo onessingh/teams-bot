@@ -49,12 +49,21 @@ addBtn.addEventListener('click', () => {
     
     if(url) {
         const recordedAccountSelect = document.getElementById('recorded-account');
-                const accountId = recordedAccountSelect ? recordedAccountSelect.value : 'default';
+        const accountId = recordedAccountSelect ? recordedAccountSelect.value : 'default';
+        const course = document.getElementById('vod-course')?.value || 'general';
+        const category = course === 'healthcare' ? 'hc-recorded-class' : 'recorded-class';
         const subject = document.getElementById('vod-subject')?.value || '';
         const semester = document.getElementById('vod-semester')?.value || '';
         
+        const coursePrefix = course === 'healthcare' ? 'MBA-HC ' : '';
+        const titleStr = (semester && subject) 
+            ? `${coursePrefix}Sem-${semester}: ${subject}` 
+            : (subject || (semester ? `${coursePrefix}Sem-${semester}` : '') || ('Class ' + new Date().toLocaleString()));
+
         push(ref(db, 'queue'), {
-            title: "Class " + new Date().toLocaleString(),
+            title: titleStr,
+            course: course,
+            category: category,
             subject: subject,
             semester: semester,
             url: url,
@@ -130,6 +139,7 @@ onValue(ref(db, 'queue'), (snapshot) => {
                 </div>
                 <div class="mb-1 flex items-center gap-2 flex-wrap">
                     <span class="text-[11px] font-black uppercase tracking-wider ${statusColor} shrink-0" id="status-${item.id}">${statusText}</span>
+                    ${(item.course === 'healthcare' || item.category === 'hc-recorded-class' || (item.title && item.title.includes('MBA-HC'))) ? '<span class="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded font-bold border border-emerald-200">🏥 MBA-HC</span>' : '<span class="text-[10px] bg-gray-50 text-gray-600 px-2 py-0.5 rounded font-medium border border-gray-200">🎓 MBA</span>'}
                     <span class="text-[10px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded font-bold border border-blue-100">👤 ${item.accountId || 'default'}</span>
                 </div>
                 <div class="text-[11px] text-gray-500 flex justify-between items-center pr-8">
@@ -395,14 +405,23 @@ liveAddBtn.addEventListener('click', async () => {
     liveAddBtn.innerText = 'Adding...';
     
     try {
+        const course = document.getElementById('live-course')?.value || 'general';
+        const category = course === 'healthcare' ? 'hc-recorded-class' : 'recorded-class';
         const subject = document.getElementById('live-subject')?.value || '';
         const semester = document.getElementById('live-semester')?.value || '';
         
+        const coursePrefix = course === 'healthcare' ? 'MBA-HC ' : '';
+        const titleStr = (semester && subject) 
+            ? `${coursePrefix}Sem-${semester}: ${subject}` 
+            : (subject || (semester ? `${coursePrefix}Sem-${semester}` : '') || ('Live Class: ' + new Date().toLocaleString()));
+
         await push(ref(db, 'live_queue'), {
             url: url,
+            course: course,
+            category: category,
             subject: subject,
             semester: semester,
-            title: (semester && subject) ? `Sem-${semester}: ${subject}` : (subject || (semester ? `Sem-${semester}` : '') || ('Live Class: ' + new Date().toLocaleString())),
+            title: titleStr,
             status: 'WAITING',
             addedAt: Date.now(),
             scheduledTime: scheduledTime,
@@ -477,6 +496,7 @@ onValue(ref(db, 'live_queue'), (snapshot) => {
                 </div>
                 <div class="mb-1 flex items-center gap-2 flex-wrap">
                     <span class="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${statusColor} shrink-0">${statusText}</span>
+                    ${(item.course === 'healthcare' || item.category === 'hc-recorded-class' || (item.title && item.title.includes('MBA-HC'))) ? '<span class="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded font-bold border border-emerald-200">🏥 MBA-HC</span>' : '<span class="text-[10px] bg-gray-50 text-gray-600 px-2 py-0.5 rounded font-medium border border-gray-200">🎓 MBA</span>'}
                     <span class="text-[10px] bg-red-50 text-red-700 px-2 py-0.5 rounded font-bold border border-red-100">👤 ${item.accountId || 'default'}</span>
                 </div>
                 <div class="text-[11px] text-gray-500 flex justify-between items-center pr-8">
@@ -676,7 +696,7 @@ async function updateGitHubLiveCron() {
 
 
 // SUBJECT MAPPING LOGIC
-const subjectsData = {
+const generalSubjectsData = {
     "1": [
         "Organisational Behavior", "Data Analysis and Decision Tools", "Managerial Economics", 
         "Accounting for Managers", "Marketing Management", "Human Resource Management", 
@@ -710,28 +730,78 @@ const subjectsData = {
     ]
 };
 
-function populateSubjects(semId, subjId) {
+const healthcareSubjectsData = {
+    "1": [
+        "Organizational Behavior",
+        "Quantitative Methods in Healthcare",
+        "Health Economics",
+        "Accounting for Health Sector Manager",
+        "Marketing Management in Healthcare",
+        "Financial Management for Healthcare Managers",
+        "IT in Healthcare Management"
+    ],
+    "2": [
+        "Human Resource Management in Healthcare",
+        "Operations Management in Healthcare",
+        "Project Management in Healthcare",
+        "Hospital Planning",
+        "Health Systems Research",
+        "Health Communication: Skills and Processes",
+        "Analytics for Healthcare Management"
+    ],
+    "3": [
+        "Healthcare Ethics, Governance and Society",
+        "Strategic Analysis in Healthcare",
+        "Hospital Operations and Control",
+        "Total Quality Management and Accreditation for Healthcare",
+        "Management of Hospital Support Services",
+        "Supply Chain Management in Healthcare",
+        "Public Health Management"
+    ],
+    "4": [
+        "Innovations in Healthcare",
+        "Regulation and Laws in Health Sector",
+        "Healthcare Entrepreneurship and Innovation",
+        "International Health Systems",
+        "Healthcare Financing and Insurance",
+        "Strategic Management in Healthcare",
+        "Contemporary Issues in Healthcare: Seminar Paper"
+    ]
+};
+
+// Backwards compatibility alias
+const subjectsData = generalSubjectsData;
+
+function populateSubjects(courseId, semId, subjId) {
+    const courseSelect = document.getElementById(courseId);
     const semSelect = document.getElementById(semId);
     const subjSelect = document.getElementById(subjId);
+    if (!semSelect || !subjSelect) return;
     
-    semSelect.addEventListener('change', (e) => {
-        const sem = e.target.value;
+    function updateOptions() {
+        const course = courseSelect ? courseSelect.value : 'general';
+        const sem = semSelect.value;
+        const dataSource = course === 'healthcare' ? healthcareSubjectsData : generalSubjectsData;
+
         subjSelect.innerHTML = '<option value="">-- Select Subject --</option>';
-        if (sem && subjectsData[sem]) {
-            subjectsData[sem].forEach(subj => {
+        if (sem && dataSource[sem]) {
+            dataSource[sem].forEach(subj => {
                 const opt = document.createElement('option');
                 opt.value = subj;
                 opt.innerText = subj;
                 subjSelect.appendChild(opt);
             });
         }
-    });
+    }
+
+    if (courseSelect) {
+        courseSelect.addEventListener('change', updateOptions);
+    }
+    semSelect.addEventListener('change', updateOptions);
 }
 
-populateSubjects('vod-semester', 'vod-subject');
-
-  populateSubjects('vod-semester', 'vod-subject');
-  populateSubjects('live-semester', 'live-subject');
+populateSubjects('vod-course', 'vod-semester', 'vod-subject');
+populateSubjects('live-course', 'live-semester', 'live-subject');
   
   // ==========================================
   // FRONTEND BACKUP SCHEDULER

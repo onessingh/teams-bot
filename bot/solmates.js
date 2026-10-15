@@ -123,7 +123,58 @@ const SUBJECT_SHORT_CODES = {
   'strategic capability building and innovation': 'SCBI',
   'strategic innovation in health care and education': 'SIHE',
   'strategic management in social enterprises': 'SMSE',
-  'strategic management of startups': 'SMS'
+  'strategic management of startups': 'SMS',
+
+  // MBA in Healthcare Management - Semester 1
+  'quantitative methods in healthcare': 'QMH',
+  'health economics': 'HE',
+  'accounting for health sector manager': 'AHSM',
+  'accounting for health sector managers': 'AHSM',
+  'marketing management in healthcare': 'MMH',
+  'financial management for healthcare managers': 'FMHM',
+  'financial management for health care managers': 'FMHM',
+  'it in healthcare management': 'ITHM',
+  'information technology in healthcare management': 'ITHM',
+
+  // MBA in Healthcare Management - Semester 2
+  'human resource management in healthcare': 'HRMH',
+  'operations management in healthcare': 'OMH',
+  'project management in healthcare': 'PMH',
+  'hospital planning': 'HP',
+  'health systems research': 'HSR',
+  'health communication skills and processes': 'HCSP',
+  'health communication skills and process': 'HCSP',
+  'analytics for healthcare management': 'AHM',
+
+  // MBA in Healthcare Management - Semester 3
+  'healthcare ethics governance and society': 'HEGS',
+  'health care ethics governance and society': 'HEGS',
+  'strategic analysis in healthcare': 'SAH',
+  'strategic analysis in health care': 'SAH',
+  'hospital operations and control': 'HOC',
+  'total quality management and accreditation for healthcare': 'TQMA',
+  'total quality management and accreditation for health care': 'TQMA',
+  'management of hospital support services': 'MHSS',
+  'supply chain management in healthcare': 'SCMH',
+  'supply chain management in health care': 'SCMH',
+  'public health management': 'PHM',
+
+  // MBA in Healthcare Management - Semester 4
+  'innovations in healthcare': 'IH',
+  'innovations in health care': 'IH',
+  'regulation and laws in health sector': 'RLHS',
+  'regulations and laws in health sector': 'RLHS',
+  'healthcare entrepreneurship and innovation': 'HEI',
+  'health care entrepreneurship and innovation': 'HEI',
+  'international health systems': 'IHS',
+  'healthcare financing and insurance': 'HFI',
+  'health care financing and insurance': 'HFI',
+  'strategic management in healthcare': 'SMH',
+  'strategic management in health care': 'SMH',
+  'contemporary issues in healthcare seminar paper': 'CIH',
+  'contemporary issues in health care seminar paper': 'CIH',
+  'contemporary issues in healthcare': 'CIH',
+  'contemporary issues in health care': 'CIH'
 };
 
 function getShortSubjectCode(rawSubject) {
@@ -225,33 +276,38 @@ class SolmatesClient {
   /**
    * Resolve target Subject folderId on solmates.in
    * Handles:
-   * - Semester 1 & 2: direct subject folders (ignores "Recorded 2025 Batch")
-   * - Semester 3 & 4: specialisation folders (Core, Finance, Marketing, HR) -> subject folder
+   * - Healthcare (hc-recorded-class): direct subject folders in all 4 semesters
+   * - General MBA (recorded-class) Semester 1 & 2: direct subject folders
+   * - General MBA (recorded-class) Semester 3 & 4: specialisation folders (Core, Finance, Marketing, HR) -> subject folder
    */
-  async resolveSubjectFolder(semester, subjectName) {
+  async resolveSubjectFolder(semester, subjectName, category = 'recorded-class') {
     const sem = String(semester);
-    const res = await apiRequest(`/sol/folders/recorded-class/${sem}`);
+    const cat = category || 'recorded-class';
+    const res = await apiRequest(`/sol/folders/${cat}/${sem}`);
     if (!res || !res.data) {
-      throw new Error(`Failed to fetch folders for Semester ${sem}`);
+      throw new Error(`Failed to fetch folders for Semester ${sem} (${cat})`);
     }
 
     // Filter out historical archive folders like "Recorded 2025 Batch"
     const activeFolders = res.data.filter(f => !/recorded\s*\d{4}/i.test(f.name));
 
-    // For Semester 1 & 2: Direct match with active folders
-    if (sem === '1' || sem === '2') {
-      const normTarget = normalize(subjectName);
+    // For Healthcare (all semesters) OR General MBA Semester 1 & 2: Direct match with active folders
+    const isHealthcare = cat.startsWith('hc');
+    if (isHealthcare || sem === '1' || sem === '2') {
+      let cleanSubj = subjectName;
+      if (cleanSubj.includes(':')) {
+        cleanSubj = cleanSubj.split(':').slice(1).join(':').trim();
+      }
+      const normTarget = normalize(cleanSubj);
       const match = activeFolders.find(f => {
         const nf = normalize(f.name);
         return nf === normTarget || nf.includes(normTarget) || normTarget.includes(nf);
       });
       if (match) return match;
-      throw new Error(`Subject folder "${subjectName}" not found in Semester ${sem}`);
+      throw new Error(`Subject folder "${subjectName}" not found in Semester ${sem} (${cat})`);
     }
 
-    // For Semester 3 & 4: Folder hierarchy (Specialisation -> Subject)
-    // E.g. subjectName might be "Finance: Security Analysis and Portfolio Management"
-    // or "Security Analysis and Portfolio Management"
+    // For Semester 3 & 4 (General MBA): Folder hierarchy (Specialisation -> Subject)
     let specPart = '';
     let subjPart = subjectName;
     if (subjectName.includes(':')) {
@@ -268,7 +324,7 @@ class SolmatesClient {
       return nf === normSubj || nf.includes(normSubj) || normSubj.includes(nf);
     });
     if (directMatch) {
-      const subRes = await apiRequest(`/sol/folders/recorded-class/${sem}?parentId=${directMatch.id}`);
+      const subRes = await apiRequest(`/sol/folders/${cat}/${sem}?parentId=${directMatch.id}`);
       if (!subRes || !subRes.data || subRes.data.length === 0) {
         // Direct folder has no subfolders, items are placed directly here!
         return directMatch;
@@ -287,7 +343,7 @@ class SolmatesClient {
       }
 
       // Fetch subfolders inside this group
-      const subRes = await apiRequest(`/sol/folders/recorded-class/${sem}?parentId=${group.id}`);
+      const subRes = await apiRequest(`/sol/folders/${cat}/${sem}?parentId=${group.id}`);
       if (subRes && subRes.data) {
         const match = subRes.data.find(f => {
           const nf = normalize(f.name);
@@ -302,7 +358,7 @@ class SolmatesClient {
     // Fallback: search all subfolders across all groups if spec wasn't specified
     if (!specPart) {
       for (const group of activeFolders) {
-        const subRes = await apiRequest(`/sol/folders/recorded-class/${sem}?parentId=${group.id}`);
+        const subRes = await apiRequest(`/sol/folders/${cat}/${sem}?parentId=${group.id}`);
         if (subRes && subRes.data) {
           const match = subRes.data.find(f => {
             const nf = normalize(f.name);
@@ -313,17 +369,18 @@ class SolmatesClient {
       }
     }
 
-    throw new Error(`Subject folder "${subjectName}" not found in Semester ${sem} groups.`);
+    throw new Error(`Subject folder "${subjectName}" not found in Semester ${sem} groups (${cat}).`);
   }
 
   /**
    * Determine the next class number and title directly from Solmates.in folder!
    */
-  async getNextClassInfo(semester, subject, date = new Date()) {
-    const folder = await this.resolveSubjectFolder(semester, subject);
+  async getNextClassInfo(semester, subject, date = new Date(), category = 'recorded-class') {
+    const cat = category || 'recorded-class';
+    const folder = await this.resolveSubjectFolder(semester, subject, cat);
 
     // Fetch existing classes in this folder to calculate next class number
-    const itemsRes = await apiRequest(`/sol/recorded-class/${semester}?folderId=${folder.id}`);
+    const itemsRes = await apiRequest(`/sol/${cat}/${semester}?folderId=${folder.id}`);
     const existingCount = (itemsRes && Array.isArray(itemsRes.data)) ? itemsRes.data.length : 0;
     const nextClassNum = existingCount + 1;
     const ordinalWord = getOrdinalWord(nextClassNum);
@@ -344,25 +401,27 @@ class SolmatesClient {
       shortCode,
       youtubeTitle,
       solmatesTitle,
-      dateFormattedYMD
+      dateFormattedYMD,
+      category: cat
     };
   }
 
   /**
    * Upload video to solmates.in
    */
-  async uploadLecture({ semester, subject, youtubeUrl, date = new Date(), customTitle = null }) {
+  async uploadLecture({ semester, subject, youtubeUrl, date = new Date(), customTitle = null, category = 'recorded-class' }) {
     if (!this.token) {
       await this.login();
     }
 
-    const info = await this.getNextClassInfo(semester, subject, date);
+    const cat = category || 'recorded-class';
+    const info = await this.getNextClassInfo(semester, subject, date, cat);
     const finalTitle = customTitle || info.solmatesTitle;
 
-    console.log(`[Solmates] Folder: "${info.folder.name}" | Existing: ${info.existingCount} | Next: ${info.ordinalWord} Class`);
+    console.log(`[Solmates] (${cat}) Folder: "${info.folder.name}" | Existing: ${info.existingCount} | Next: ${info.ordinalWord} Class`);
     console.log(`[Solmates] Titles -> YouTube: "${info.youtubeTitle}" | Solmates: "${finalTitle}"`);
 
-    const res = await apiRequest(`/sol/recorded-class/${semester}`, 'POST', {
+    const res = await apiRequest(`/sol/${cat}/${semester}`, 'POST', {
       folderId: info.folder.id,
       title: finalTitle,
       link: youtubeUrl,
@@ -373,7 +432,7 @@ class SolmatesClient {
     }, this.token);
 
     if (res && (res.success || res._id || res.id)) {
-      console.log(`✅ [Solmates] Successfully published to solmates.in: "${finalTitle}"`);
+      console.log(`✅ [Solmates] Successfully published to solmates.in (${cat}): "${finalTitle}"`);
       return { 
         success: true, 
         title: finalTitle, 
@@ -381,6 +440,7 @@ class SolmatesClient {
         folderName: info.folder.name, 
         classNum: info.nextClassNum,
         ordinalWord: info.ordinalWord,
+        category: cat,
         data: res 
       };
     } else {
