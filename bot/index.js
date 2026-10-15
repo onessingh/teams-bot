@@ -222,7 +222,9 @@ async function processItem(item) {
     }
 
     try {
-      if (fs.existsSync('intro.mp4')) {
+      if (result && result.directDownload) {
+        console.log('[INFO] Direct download detected. Skipping intro/outro concatenation to preserve original video stream integrity and prevent YouTube processing failure.');
+      } else if (fs.existsSync('intro.mp4')) {
         console.log('[INFO] Normalizing intro.mp4 for concatenation (30 fps, High Profile)...');
         const { execSync } = require('child_process');
         const fps = process.env.RECORDING_FPS || '30';
