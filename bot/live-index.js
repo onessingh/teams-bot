@@ -274,6 +274,10 @@ async function processItem(item) {
     await ref.update({ status: 'WAITING_FOR_UPLOAD_SLOT', live_frame: null, updatedAt: Date.now() });
     const workerLockId = `live_${item.id}_${Date.now()}`;
     let youtubeUrl = null;
+    let videoTitle = null;
+    let solmatesClient = null;
+    let solmatesClassInfo = null;
+
     try {
       await acquireUploadLock(db, workerLockId);
       await ref.update({ status: 'UPLOADING', live_frame: null, upload_progress: 0, updatedAt: Date.now() });
@@ -285,10 +289,6 @@ async function processItem(item) {
           playlistName = `${playlistName} (Sem ${item.semester})`;
         }
       }
-
-      let videoTitle = null;
-      let solmatesClient = null;
-      let solmatesClassInfo = null;
 
       // Single source of truth: Decide class number & YouTube title from Solmates.in!
       if (item.semester && item.subject) {
