@@ -1296,6 +1296,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             const buf = await page.screenshot({ type: 'jpeg', quality: 30 });
             await options.onFrame('data:image/jpeg;base64,' + buf.toString('base64'));
         }
+      } catch (e) {}
       loopCount++;
 
       if (options.shouldStop && await options.shouldStop().catch(() => false)) {
