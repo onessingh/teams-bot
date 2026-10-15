@@ -1304,14 +1304,10 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         break;
       }
 
-      // Anti-idle
-      if (loopCount % 20 === 0) {
-        try {
-          await page.mouse.move(100 + Math.random() * 500, 100 + Math.random() * 500);
-          await sleep(500);
-          await page.mouse.move(0, 800, { steps: 10 });
-        } catch (e) {}
-      }
+      // Anti-idle & wake up Teams toolbar so participant count & controls stay visible
+      try {
+        await page.mouse.move(400 + (loopCount % 10) * 30, 25 + (loopCount % 3) * 5);
+      } catch (e) {}
 
       // Teacher Scoring & Smart Departure Detection
       try {
@@ -1407,27 +1403,10 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
               console.log(`🎓 Locked Teacher Identified: "${lockedTeacher}" (Cumulative Score: ${maxScore})`);
             }
 
-            // Check if locked real teacher has left stage & roster (12 checks = 3 mins grace period)
-            if (!signals[lockedTeacher]) {
-              teacherMissingCount++;
-              console.log(`⚠️ Teacher "${lockedTeacher}" missing from meeting/roster (${teacherMissingCount}/12 checks)...`);
-              if (teacherMissingCount >= 12) {
-                console.log(`🎓 Real Teacher "${lockedTeacher}" has left the meeting for >3 mins. Stopping recording early!`);
-                break;
+            if (signals[lockedTeacher]) {
+              if (loopCount % 8 === 0) {
+                console.log(`[DEBUG] 👨‍🏫 Active teacher: "${lockedTeacher}"`);
               }
-            } else {
-              teacherMissingCount = 0;
-            }
-
-            // Check for silent meeting after presentation ends (no screen share & no presentation for 3 mins)
-            if (!isSharing && loopCount > 40) {
-              noActivityCount++;
-              if (noActivityCount >= 12) { // 3 mins without screen share / active presentation
-                console.log(`🎓 Screen share & presentation inactive for >3 mins after class. Stopping recording early!`);
-                break;
-              }
-            } else {
-              noActivityCount = 0;
             }
           }
         }
@@ -1537,6 +1516,10 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             maxParticipants = currentCount;
         }
 
+        if (loopCount % 4 === 0) {
+            console.log(`[DEBUG] 👥 Current attendees: ${currentCount > 0 ? currentCount : 'toolbar hidden'} (Peak: ${maxParticipants})`);
+        }
+
         // 1. Explicit Meeting Ended screen detection
         if (stats.ended) {
             console.log('🏁 Meeting ended screen detected (Organizer ended call or removed). Stopping recording.');
@@ -1555,35 +1538,26 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             callDisconnectedCount = 0;
         }
 
-        // 3. Bot is alone in meeting (Waiting for others screen OR 1 participant OR 0 participants on stage)
-        const isAlone = stats.isWaitingForOthers || currentCount === 1 || (currentCount === 0 && loopCount > 6 && stats.hasCallStage && !stats.inLobby);
+        // 3. Bot is alone in meeting (Waiting for others screen OR 1 participant)
+        // CRITICAL FIX: NEVER treat currentCount === 0 as alone! In Teams web, 0 means toolbar auto-hid.
+        const isAlone = stats.isWaitingForOthers || (currentCount === 1 && stats.hasCallStage && !stats.inLobby);
         if (isAlone) {
             aloneCount++;
             const elapsedMins = (Date.now() - startTime) / (60 * 1000);
 
             // USER RULE:
-            // "aadha ghanta laga do n aadhe ghante baad jab bhi waiting wala aaye left kar dena
-            // i mean aadhe ghante baad jab bhi se matlab 2 ghante 1:30 ghante ya 3 jab bhi aaye wapis"
-            //
-            // If recording has been active for >= 30 mins (e.g. 45m, 1h, 1.5h, 2h, 3h):
-            // Whenever "Waiting for others" appears, exit in 45s!
-            // Also, if a real class happened earlier (peak >= 8 or teacher locked), exit in 45s!
-            const hasClassActuallyHappened = (maxParticipants >= 8) || 
-                                             (maxParticipants >= 5 && loopCount > 40) || 
-                                             (Boolean(lockedTeacher) && loopCount > 20);
-
-            const canExitAlone = (elapsedMins >= 30) || hasClassActuallyHappened;
+            // "aadha ghanta laga do n aadhe ghante baad jab bhi waiting wala aaye left kar dena"
+            // Wait at least 30 mins, or if class already peaked (>= 15) and dropped to 1 alone for 2.5 mins:
+            const hadRealClass = maxParticipants >= 15;
+            const canExitAlone = (elapsedMins >= 30) || (hadRealClass && loopCount > 20);
 
             if (canExitAlone) {
-                // After 30 mins OR after real class happened: Exit cleanly!
-                console.log(`[DEBUG] Waiting/Alone screen detected after ${elapsedMins.toFixed(1)} mins (WaitingForOthers: ${!!stats.isWaitingForOthers}, count: ${currentCount}) (${aloneCount}/3 checks - 45s)...`);
-                if (aloneCount >= 3) {
-                    console.log(`🎓 Meeting/Class finished! Bot alone on stage after ${elapsedMins.toFixed(1)} mins. Stopping recording.`);
+                console.log(`[DEBUG] Waiting/Alone screen detected after ${elapsedMins.toFixed(1)} mins (WaitingForOthers: ${!!stats.isWaitingForOthers}, count: ${currentCount}) (${aloneCount}/10 checks - 2.5m)...`);
+                if (aloneCount >= 10) { // 10 * 15s = 2.5 minutes of verified alone
+                    console.log(`🎓 Meeting/Class finished! Bot alone on stage for >2.5 minutes after ${elapsedMins.toFixed(1)} mins. Stopping recording.`);
                     meetingEnded = true;
                 }
             } else {
-                // Within first 30 mins and no class yet:
-                // Teacher might be late or students joining/leaving. Keep waiting!
                 if (aloneCount % 4 === 0) {
                     console.log(`[DEBUG] ⏳ Waiting for class to start (${elapsedMins.toFixed(1)}m / 30.0m elapsed). Teacher late or early join, keeping recording active...`);
                 }
@@ -1592,25 +1566,26 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             aloneCount = 0;
         }
 
-        // 4. Almost empty meeting (<= 2 participants left when class was larger)
-        if (maxParticipants >= 5 && currentCount <= 2 && loopCount > 6) {
+        // 4. Almost empty meeting (<= 2 participants left when class was large, e.g. peak >= 20)
+        // Must be verified currentCount > 0!
+        if (maxParticipants >= 20 && currentCount > 0 && currentCount <= 2 && loopCount > 12) {
             smallMeetingDropCount++;
-            console.log(`[DEBUG] Almost empty meeting: only ${currentCount} participants left (Peak: ${maxParticipants}) (${smallMeetingDropCount}/8 checks - 2 mins)...`);
-            if (smallMeetingDropCount >= 8) {
-                console.log(`🎓 Meeting almost empty (only ${currentCount} participants left for >2 minutes). Stopping recording.`);
+            console.log(`[DEBUG] Almost empty meeting: only ${currentCount} participants left (Peak: ${maxParticipants}) (${smallMeetingDropCount}/12 checks - 3 mins)...`);
+            if (smallMeetingDropCount >= 12) {
+                console.log(`🎓 Meeting almost empty (only ${currentCount} participants left for >3 minutes). Stopping recording.`);
                 meetingEnded = true;
             }
-        } else {
+        } else if (currentCount > 2) {
             smallMeetingDropCount = 0;
         }
 
         // 5. USER REQUESTED 5-MINUTE MASS EXODUS RULE:
         // "achank se bahot sare log left ho jaaye to 5 min baad recording band kar dena"
-        // If peak attendance was >= 10, and count drops to <= 25% of peak OR <= 5 participants (or 0):
-        const isMassExodus = (maxParticipants >= 10 && (
+        // If peak attendance was >= 15, and count drops to <= 25% of peak OR <= 5 participants:
+        // (CRITICAL: currentCount MUST BE > 0! If 0, it means unread DOM, so do NOT trigger!)
+        const isMassExodus = (maxParticipants >= 15 && currentCount > 0 && (
             currentCount <= Math.max(3, Math.floor(maxParticipants * 0.25)) ||
-            (maxParticipants >= 15 && currentCount <= 5) ||
-            currentCount === 0
+            currentCount <= 5
         ));
 
         if (isMassExodus && loopCount > 8) {
@@ -1621,7 +1596,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                 console.log(`🎓 Class finished! Mass exodus confirmed: Participants dropped from peak ${maxParticipants} to ${currentCount} and stayed low for >5 minutes. Stopping recording!`);
                 meetingEnded = true;
             }
-        } else {
+        } else if (currentCount > 5) {
             exodusCount = 0;
         }
 
