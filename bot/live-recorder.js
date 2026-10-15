@@ -1545,21 +1545,21 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             aloneCount++;
             const elapsedMins = (Date.now() - startTime) / (60 * 1000);
 
-            // USER RULE:
-            // "aadha ghanta laga do n aadhe ghante baad jab bhi waiting wala aaye left kar dena"
-            // Wait at least 30 mins, or if class already peaked (>= 15) and dropped to 1 alone for 2.5 mins:
-            const hadRealClass = maxParticipants >= 15;
-            const canExitAlone = (elapsedMins >= 30) || (hadRealClass && loopCount > 20);
+            // USER STRICT RULE:
+            // "class join hone ke 30 min baad aaye tab n aisa karne ko... teacher aaj kal 1 ghante baad join kar rhe"
+            // Before 30 minutes: Bot MUST WAIT patiently. Teacher might be late.
+            // Only after 30 minutes (elapsedMins >= 30), if "waiting for others" / alone persists:
+            const canExitAlone = elapsedMins >= 30;
 
             if (canExitAlone) {
                 console.log(`[DEBUG] Waiting/Alone screen detected after ${elapsedMins.toFixed(1)} mins (WaitingForOthers: ${!!stats.isWaitingForOthers}, count: ${currentCount}) (${aloneCount}/10 checks - 2.5m)...`);
-                if (aloneCount >= 10) { // 10 * 15s = 2.5 minutes of verified alone
-                    console.log(`🎓 Meeting/Class finished! Bot alone on stage for >2.5 minutes after ${elapsedMins.toFixed(1)} mins. Stopping recording.`);
+                if (aloneCount >= 10) { // 10 * 15s = 2.5 minutes of verified alone AFTER 30 mins has passed
+                    console.log(`🎓 Meeting/Class finished! Bot alone on stage after ${elapsedMins.toFixed(1)} mins (>30m elapsed). Stopping recording.`);
                     meetingEnded = true;
                 }
             } else {
                 if (aloneCount % 4 === 0) {
-                    console.log(`[DEBUG] ⏳ Waiting for class to start (${elapsedMins.toFixed(1)}m / 30.0m elapsed). Teacher late or early join, keeping recording active...`);
+                    console.log(`[DEBUG] ⏳ Waiting for teacher/class to start (${elapsedMins.toFixed(1)}m / 30.0m mandatory minimum wait). Teacher late or early join, keeping recording active...`);
                 }
             }
         } else if (currentCount > 1) {
@@ -1567,12 +1567,12 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         }
 
         // 4. Almost empty meeting (<= 2 participants left when class was large, e.g. peak >= 20)
-        // Must be verified currentCount > 0!
-        if (maxParticipants >= 20 && currentCount > 0 && currentCount <= 2 && loopCount > 12) {
+        // STRICT: Only after 30 minutes!
+        if (maxParticipants >= 20 && currentCount > 0 && currentCount <= 2 && elapsedMins >= 30) {
             smallMeetingDropCount++;
             console.log(`[DEBUG] Almost empty meeting: only ${currentCount} participants left (Peak: ${maxParticipants}) (${smallMeetingDropCount}/12 checks - 3 mins)...`);
             if (smallMeetingDropCount >= 12) {
-                console.log(`🎓 Meeting almost empty (only ${currentCount} participants left for >3 minutes). Stopping recording.`);
+                console.log(`🎓 Meeting almost empty (only ${currentCount} participants left for >3 minutes after ${elapsedMins.toFixed(1)}m). Stopping recording.`);
                 meetingEnded = true;
             }
         } else if (currentCount > 2) {
@@ -1582,13 +1582,14 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         // 5. USER REQUESTED 5-MINUTE MASS EXODUS RULE:
         // "achank se bahot sare log left ho jaaye to 5 min baad recording band kar dena"
         // If peak attendance was >= 15, and count drops to <= 25% of peak OR <= 5 participants:
-        // (CRITICAL: currentCount MUST BE > 0! If 0, it means unread DOM, so do NOT trigger!)
-        const isMassExodus = (maxParticipants >= 15 && currentCount > 0 && (
+        // (CRITICAL: currentCount MUST BE > 0 and class ran for at least 20 minutes!)
+        const elapsedMinsExodus = (Date.now() - startTime) / (60 * 1000);
+        const isMassExodus = (maxParticipants >= 15 && currentCount > 0 && elapsedMinsExodus >= 20 && (
             currentCount <= Math.max(3, Math.floor(maxParticipants * 0.25)) ||
             currentCount <= 5
         ));
 
-        if (isMassExodus && loopCount > 8) {
+        if (isMassExodus) {
             exodusCount++;
             const elapsedMins = (exodusCount * 15 / 60).toFixed(1);
             console.log(`[DEBUG] 📉 Mass exodus in progress: ${currentCount} participants left (Peak: ${maxParticipants}) (${exodusCount}/20 checks - ${elapsedMins}m / 5.0m)...`);
