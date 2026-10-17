@@ -1315,58 +1315,84 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
           const signals = {};
           let isSharing = false;
 
+          function cleanName(raw) {
+            if (!raw) return '';
+            let s = raw.replace(/\s*\([^)]*\)/g, ' ')
+                       .replace(/,\s*(?:mic\s*(?:muted|unmuted)|camera\s*(?:on|off)|speaking|presented|video)/gi, ' ')
+                       .replace(/\s*(?:is\s*presenting|has\s*started\s*sharing|is\s*sharing\s*screen|'s\s*screen)/gi, ' ')
+                       .replace(/\s+/g, ' ')
+                       .trim();
+            const blacklist = /^(people|leave|chat|react|more|view|apps|settings|device|mic|camera|share|raise|hand|hang\s*up|mute|unmute|participants|in\s*this\s*meeting|attendees|toolbar|calling|stage|screen|recording|banner|gallery)$/i;
+            if (blacklist.test(s)) return '';
+            if (s.length < 3 || s.length > 50) return '';
+            if (!/^[A-Z]/.test(s)) return '';
+            return s;
+          }
+
           // 1. Check Screen Share Presenter
           const screenShareStage = document.querySelector('[data-tid="screen-share"], [data-tid="presentation-stage"], [data-tid*="sharing"], [class*="screen-share"], [data-tid="screen-sharing-canvas"]');
-          if (screenShareStage) {
-            isSharing = true;
-            // Check for "X is presenting" text across all headers/spans
-            const textNodes = Array.from(document.querySelectorAll('span, div, h2, p'));
-            for (const el of textNodes) {
-              const t = (el.textContent || '').trim();
-              const m = t.match(/([A-Z][a-zA-Z\s.]+?)\s+(?:is presenting|has started sharing|'s screen)/i);
-              if (m && m[1]) {
-                const name = m[1].trim();
-                if (name.length > 2 && !name.includes('In this meeting') && !name.includes('Participants')) {
-                  signals[name] = (signals[name] || 0) + 6; // Screen share presenter = +6 pts
-                  break;
-                }
-              }
-            }
-          }
-          if (document.querySelector('video')) {
+          if (screenShareStage || document.querySelector('video')) {
             isSharing = true;
           }
 
-          // 2. Check Video Gallery / Tiles (Active mic / speaker / camera)
-          const tiles = document.querySelectorAll('[data-tid="video-tile"], [data-cid="video-tile"], [class*="video-tile"], [class*="participant"], [role="listitem"]');
-          tiles.forEach(tile => {
-            let name = '';
-            const nameEl = tile.querySelector('span[data-tid="author"], span[class*="name"], div[class*="participant-name"], [data-tid="participant-name"], [data-tid="video-tile-name"], footer, figcaption');
-            if (nameEl) {
-              name = (nameEl.textContent || '').trim();
-            } else {
-              const raw = (tile.innerText || '').split('\n').map(s => s.trim()).filter(s => s.length > 2 && !/^(sg|m|p|a|\d|on hold)$/i.test(s));
-              if (raw.length > 0) name = raw[0];
-            }
-            if (name && name.length > 2 && !name.includes('In this meeting') && !name.includes('Participants')) {
-              let pts = 1;
-              const html = (tile.outerHTML || '').toLowerCase();
-              if (html.includes('speaking') || html.includes('unmute') || tile.querySelector('[class*="speaking"]')) {
-                pts += 3; // Active speaking = +3 pts
+          // Check text nodes & headers for "X is presenting" / "X is sharing screen"
+          const allTextEls = Array.from(document.querySelectorAll('span, div, h2, p, [aria-label]'));
+          for (const el of allTextEls) {
+            const t = (el.textContent || el.getAttribute('aria-label') || '').trim();
+            const m = t.match(/([A-Z][a-zA-Z\s.]+?)\s+(?:is presenting|has started sharing|is sharing screen|'s screen)/i);
+            if (m && m[1]) {
+              const name = cleanName(m[1]);
+              if (name) {
+                signals[name] = (signals[name] || 0) + 6; // Screen share presenter = +6 pts
+                isSharing = true;
+                break;
               }
-              if (tile.querySelector('video')) {
-                pts += 2; // Active camera = +2 pts
+            }
+          }
+
+          // 2. Check Video Gallery / Participant Tiles & Avatars (Teams Fluent UI v9 & standard)
+          const participantEls = document.querySelectorAll(
+            '[data-tid*="participant"], [data-cid*="participant"], [data-tid*="stream"], ' +
+            '[data-tid*="avatar"], [data-cid*="avatar"], [data-tid*="tile"], [data-cid*="tile"], ' +
+            '[class*="video-tile"], [class*="participant"], [role="listitem"], ' +
+            '[aria-label*="speaking" i], [aria-label*="muted" i]'
+          );
+
+          participantEls.forEach(el => {
+            let rawLabel = el.getAttribute('aria-label') || el.getAttribute('title') || '';
+            const nameEl = el.querySelector('span[data-tid="author"], span[class*="name"], div[class*="participant-name"], [data-tid*="name"], footer, figcaption');
+            if (nameEl && nameEl.textContent) {
+              rawLabel = nameEl.textContent + ' ' + rawLabel;
+            }
+            if (!rawLabel) {
+              const textContent = (el.innerText || '').split('\n').filter(s => s.trim().length > 2 && !/^(sg|m|p|a|\d|on hold)$/i.test(s));
+              if (textContent.length > 0) rawLabel = textContent[0];
+            }
+
+            const name = cleanName(rawLabel);
+            if (name) {
+              let pts = 1;
+              const html = (el.outerHTML || '').toLowerCase();
+              const aria = rawLabel.toLowerCase();
+
+              // Active speaker detection (+3 pts)
+              if (aria.includes('speaking') || aria.includes('unmute') || html.includes('speaking') || !!el.querySelector('[class*="speaking"], [data-tid*="speaking"]')) {
+                pts += 3;
+              }
+              // Active camera (+2 pts)
+              if (el.querySelector('video') || html.includes('video') || aria.includes('camera on')) {
+                pts += 2;
               }
               signals[name] = (signals[name] || 0) + pts;
             }
           });
 
-          // 3. Check Roster / Participant List
-          const rosterNames = document.querySelectorAll('[data-tid="participant-name"], [data-tid="author"], [class*="participantName"], [class*="displayName"]');
-          rosterNames.forEach(el => {
-            const name = (el.textContent || '').trim();
-            if (name && name.length > 2 && !name.includes('In this meeting') && !name.includes('Attendees')) {
-              signals[name] = (signals[name] || 0) + 1;
+          // 3. Check Live Captions / Subtitles if present
+          const captionSpeakers = document.querySelectorAll('[data-tid="closed-captions-speaker"], [class*="caption-speaker"]');
+          captionSpeakers.forEach(sp => {
+            const name = cleanName(sp.textContent || '');
+            if (name) {
+              signals[name] = (signals[name] || 0) + 4; // Active talking in captions = +4 pts
             }
           });
 
@@ -1386,8 +1412,10 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
           console.log(`[DEBUG] 🎓 Top speaker scores: ${topList}`);
         }
 
-        // Lock teacher once cumulative score reaches >= 20 pts OR after 5 mins (loopCount >= 20)
-        if (loopCount >= 20 || Object.values(teacherScores).some(s => s >= 20)) {
+        // Lock / Update Teacher: User requested scoring window of at least 1:30 hours (90 mins)
+        // because teachers sometimes join late (e.g. 1 hour late)
+        const currentMinsElapsed = (Date.now() - startTime) / (60 * 1000);
+        if (currentMinsElapsed <= 90 || !lockedTeacher) {
           let topTeacher = null;
           let maxScore = 0;
           for (const [name, score] of Object.entries(teacherScores)) {
@@ -1397,16 +1425,14 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             }
           }
 
-          if (topTeacher && maxScore >= 20) {
+          if (topTeacher && maxScore >= 15) {
             if (lockedTeacher !== topTeacher) {
               lockedTeacher = topTeacher;
               console.log(`🎓 Locked Teacher Identified: "${lockedTeacher}" (Cumulative Score: ${maxScore})`);
             }
 
-            if (signals[lockedTeacher]) {
-              if (loopCount % 8 === 0) {
-                console.log(`[DEBUG] 👨‍🏫 Active teacher: "${lockedTeacher}"`);
-              }
+            if (signals[lockedTeacher] && loopCount % 8 === 0) {
+              console.log(`[DEBUG] 👨‍🏫 Active teacher: "${lockedTeacher}"`);
             }
           }
         }
