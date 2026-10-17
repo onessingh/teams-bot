@@ -905,11 +905,13 @@ setInterval(async () => {
                     }
                 }
             } else if (timeDiff > 0) {
-                // Show countdown if more than 20 mins away
+                // Show countdown until 10 mins before scheduled start
                 const mins = Math.floor(timeDiff / 60000);
-                const triggerMins = mins - 20;
+                const triggerMins = mins - 10;
                 if (triggerMins > 0) {
-                    if (elapsedDiv) elapsedDiv.innerHTML = `<span class="text-gray-500">Auto-trigger in ${triggerMins} mins...</span>`;
+                    if (elapsedDiv) elapsedDiv.innerHTML = `<span class="text-gray-500">Auto-trigger in ${triggerMins} min${triggerMins > 1 ? 's' : ''}...</span>`;
+                } else {
+                    if (elapsedDiv) elapsedDiv.innerHTML = `<span class="text-blue-500 font-medium">Triggering in &lt; 1 min...</span>`;
                 }
             }
         }
