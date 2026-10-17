@@ -206,8 +206,24 @@ function getShortSubjectCode(rawSubject) {
 function normalize(str) {
   return (str || '')
     .toLowerCase()
+    .replace(/&/g, ' and ')
     .replace(/[^a-z0-9]/g, '')
     .trim();
+}
+
+function isSubjectMatch(folderName, targetSubj) {
+  if (!folderName || !targetSubj) return false;
+  const nFolder = normalize(folderName);
+  const nTarget = normalize(targetSubj);
+  if (nFolder === nTarget || nFolder.includes(nTarget) || nTarget.includes(nFolder)) return true;
+
+  // Also check without 'and' / stop words for complete flexibility:
+  const stripAnd = (s) => (s || '').toLowerCase().replace(/&/g, '').replace(/\band\b/g, '').replace(/[^a-z0-9]/g, '').trim();
+  const sFolder = stripAnd(folderName);
+  const sTarget = stripAnd(targetSubj);
+  if (sFolder && sTarget && (sFolder === sTarget || sFolder.includes(sTarget) || sTarget.includes(sFolder))) return true;
+
+  return false;
 }
 
 function apiRequest(path, method = 'GET', body = null, token = null) {
@@ -298,11 +314,7 @@ class SolmatesClient {
       if (cleanSubj.includes(':')) {
         cleanSubj = cleanSubj.split(':').slice(1).join(':').trim();
       }
-      const normTarget = normalize(cleanSubj);
-      const match = activeFolders.find(f => {
-        const nf = normalize(f.name);
-        return nf === normTarget || nf.includes(normTarget) || normTarget.includes(nf);
-      });
+      const match = activeFolders.find(f => isSubjectMatch(f.name, cleanSubj));
       if (match) return match;
       throw new Error(`Subject folder "${subjectName}" not found in Semester ${sem} (${cat})`);
     }
@@ -316,13 +328,8 @@ class SolmatesClient {
       subjPart = parts.slice(1).join(':').trim();
     }
 
-    const normSubj = normalize(subjPart);
-
     // 1. Direct match on root folders (e.g. "ADDITIONAL COURSES" or direct subject)
-    const directMatch = activeFolders.find(f => {
-      const nf = normalize(f.name);
-      return nf === normSubj || nf.includes(normSubj) || normSubj.includes(nf);
-    });
+    const directMatch = activeFolders.find(f => isSubjectMatch(f.name, subjPart));
     if (directMatch) {
       const subRes = await apiRequest(`/sol/folders/${cat}/${sem}?parentId=${directMatch.id}`);
       if (!subRes || !subRes.data || subRes.data.length === 0) {
@@ -335,9 +342,7 @@ class SolmatesClient {
     for (const group of activeFolders) {
       // If user specified spec (e.g. "Finance" or "Core"), check if group matches
       if (specPart) {
-        const normGroup = normalize(group.name);
-        const normSpec = normalize(specPart);
-        if (!normGroup.includes(normSpec) && !normSpec.includes(normGroup)) {
+        if (!isSubjectMatch(group.name, specPart)) {
           continue; // Skip groups that don't match specified specialization
         }
       }
@@ -345,10 +350,7 @@ class SolmatesClient {
       // Fetch subfolders inside this group
       const subRes = await apiRequest(`/sol/folders/${cat}/${sem}?parentId=${group.id}`);
       if (subRes && subRes.data) {
-        const match = subRes.data.find(f => {
-          const nf = normalize(f.name);
-          return nf === normSubj || nf.includes(normSubj) || normSubj.includes(nf);
-        });
+        const match = subRes.data.find(f => isSubjectMatch(f.name, subjPart));
         if (match) {
           return match;
         }
@@ -360,10 +362,7 @@ class SolmatesClient {
       for (const group of activeFolders) {
         const subRes = await apiRequest(`/sol/folders/${cat}/${sem}?parentId=${group.id}`);
         if (subRes && subRes.data) {
-          const match = subRes.data.find(f => {
-            const nf = normalize(f.name);
-            return nf === normSubj || nf.includes(normSubj) || normSubj.includes(nf);
-          });
+          const match = subRes.data.find(f => isSubjectMatch(f.name, subjPart));
           if (match) return match;
         }
       }

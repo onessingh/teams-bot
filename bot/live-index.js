@@ -328,6 +328,17 @@ async function processItem(item) {
         }
       }
 
+      // Fallback: If Solmates title lookup failed or was unavailable, still use short subject code
+      if (!videoTitle && item.subject) {
+        try {
+          const { getShortSubjectCode, formatDateDDMMYYYY } = require('./solmates');
+          const shortCode = getShortSubjectCode(item.subject);
+          const dateStr = formatDateDDMMYYYY(new Date());
+          videoTitle = `${shortCode}..Class(${dateStr})`;
+          console.log(`[YouTube Title Fallback from ShortCode] "${videoTitle}"`);
+        } catch (_) {}
+      }
+
       if (!videoTitle) {
         videoTitle = item.title || `Live Class - ${new Date().toLocaleDateString('en-IN')}`;
       }
