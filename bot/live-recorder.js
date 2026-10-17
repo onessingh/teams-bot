@@ -1335,11 +1335,15 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             isSharing = true;
           }
 
-          // Check text nodes & headers for "X is presenting" / "X is sharing screen"
-          const allTextEls = Array.from(document.querySelectorAll('span, div, h2, p, [aria-label]'));
-          for (const el of allTextEls) {
-            const t = (el.textContent || el.getAttribute('aria-label') || '').trim();
-            const m = t.match(/([A-Z][a-zA-Z\s.]+?)\s+(?:is presenting|has started sharing|is sharing screen|'s screen)/i);
+          // Check aria-labels and leaf text nodes for "X is presenting" / "X is sharing screen"
+          const allElements = Array.from(document.querySelectorAll('[aria-label*="presenting" i], [aria-label*="sharing" i], [aria-label*="screen" i], span, p, h2, h3, div'));
+          for (const el of allElements) {
+            const aria = el.getAttribute('aria-label') || '';
+            const leafText = el.children.length === 0 ? (el.textContent || '').trim() : '';
+            const targetText = aria || leafText;
+            if (!targetText) continue;
+
+            const m = targetText.match(/([A-Z][a-zA-Z\s.]+?)\s+(?:is presenting|has started sharing|is sharing screen|'s screen)/i);
             if (m && m[1]) {
               const name = cleanName(m[1]);
               if (name) {
@@ -1361,8 +1365,11 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
           participantEls.forEach(el => {
             let rawLabel = el.getAttribute('aria-label') || el.getAttribute('title') || '';
             const nameEl = el.querySelector('span[data-tid="author"], span[class*="name"], div[class*="participant-name"], [data-tid*="name"], footer, figcaption');
-            if (nameEl && nameEl.textContent) {
-              rawLabel = nameEl.textContent + ' ' + rawLabel;
+            const nameText = nameEl ? (nameEl.textContent || '').trim() : '';
+            if (!rawLabel) {
+              rawLabel = nameText;
+            } else if (nameText && !rawLabel.toLowerCase().includes(nameText.toLowerCase())) {
+              rawLabel = nameText + ' ' + rawLabel;
             }
             if (!rawLabel) {
               const textContent = (el.innerText || '').split('\n').filter(s => s.trim().length > 2 && !/^(sg|m|p|a|\d|on hold)$/i.test(s));
@@ -1571,16 +1578,18 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         if (isAlone) {
             aloneCount++;
 
-            // USER STRICT RULE:
-            // "class join hone ke 30 min baad aaye tab n aisa karne ko... teacher aaj kal 1 ghante baad join kar rhe"
-            // Before 30 minutes: Bot MUST WAIT patiently. Teacher might be late.
-            // Only after 30 minutes (elapsedMins >= 30), if "waiting for others" / alone persists:
-            const canExitAlone = elapsedMins >= 30;
+            // USER STRICT RULES:
+            // 1. If class already ran (peak attendees >= 3 and elapsed >= 15m) and then everyone leaves ("Waiting for others to join"):
+            //    Class is FINISHED! Leave promptly in 2 checks (30s) so bot exits immediately ("clas khatam hone me waiting aaye to turant left karna chahiye").
+            // 2. If class hasn't started yet (peak < 3), teacher might be late. Bot MUST WAIT patiently up to 30 mins.
+            const hadRealClass = maxParticipants >= 3 && elapsedMins >= 15;
+            const requiredAloneChecks = hadRealClass ? 2 : 8; // 30s after class completed vs 2 mins general
+            const canExitAlone = hadRealClass || elapsedMins >= 30;
 
             if (canExitAlone) {
-                console.log(`[DEBUG] Waiting/Alone screen detected after ${elapsedMins.toFixed(1)} mins (WaitingForOthers: ${!!stats.isWaitingForOthers}, count: ${currentCount}) (${aloneCount}/8 checks - 2.0m)...`);
-                if (aloneCount >= 8) { // 8 * 15s = 2 minutes of verified alone AFTER 30 mins has passed
-                    console.log(`🎓 Meeting/Class finished! Bot alone on stage after ${elapsedMins.toFixed(1)} mins (>30m elapsed). Stopping recording.`);
+                console.log(`[DEBUG] Waiting/Alone screen detected after ${elapsedMins.toFixed(1)} mins (WaitingForOthers: ${!!stats.isWaitingForOthers}, count: ${currentCount}, peak: ${maxParticipants}) (${aloneCount}/${requiredAloneChecks} checks)...`);
+                if (aloneCount >= requiredAloneChecks) {
+                    console.log(`🎓 Meeting/Class finished! Bot alone on stage after ${elapsedMins.toFixed(1)} mins (Peak: ${maxParticipants}). Stopping recording.`);
                     meetingEnded = true;
                 }
             } else {
