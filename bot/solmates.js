@@ -409,8 +409,11 @@ class SolmatesClient {
    * Upload video to solmates.in
    */
   async uploadLecture({ semester, subject, youtubeUrl, date = new Date(), customTitle = null, category = 'recorded-class' }) {
-    if (!this.token) {
+    // Always obtain a fresh token right before upload to prevent session expiration after 1-2+ hour class recordings
+    try {
       await this.login();
+    } catch (loginErr) {
+      console.warn('[Solmates] Pre-upload login warning:', loginErr.message);
     }
 
     const cat = category || 'recorded-class';
@@ -420,7 +423,7 @@ class SolmatesClient {
     console.log(`[Solmates] (${cat}) Folder: "${info.folder.name}" | Existing: ${info.existingCount} | Next: ${info.ordinalWord} Class`);
     console.log(`[Solmates] Titles -> YouTube: "${info.youtubeTitle}" | Solmates: "${finalTitle}"`);
 
-    const res = await apiRequest(`/sol/${cat}/${semester}`, 'POST', {
+    const payload = {
       folderId: info.folder.id,
       title: finalTitle,
       link: youtubeUrl,
@@ -428,7 +431,16 @@ class SolmatesClient {
       subject: finalTitle,
       date: info.dateFormattedYMD,
       semester: String(semester)
-    }, this.token);
+    };
+
+    let res = await apiRequest(`/sol/${cat}/${semester}`, 'POST', payload, this.token);
+
+    // Auto-retry once if session expired or token invalid
+    if (res && res.error && /session expired|token|login again|unauthorized/i.test(res.error)) {
+      console.log('[Solmates] Session expired. Re-authenticating and retrying upload...');
+      await this.login();
+      res = await apiRequest(`/sol/${cat}/${semester}`, 'POST', payload, this.token);
+    }
 
     if (res && (res.success || res._id || res.id)) {
       console.log(`✅ [Solmates] Successfully published to solmates.in (${cat}): "${finalTitle}"`);
