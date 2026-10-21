@@ -365,11 +365,31 @@ async function dismissMigrationBanner(page) {
   }
 }
 
-// Dismisses Teams recording toast notifications ("Recording has started") safely without hiding the presentation stage
+// Dismisses Teams toast notifications ("Your mic has been enabled", "Recording has started", etc.) safely without hiding the presentation stage
 async function dismissRecordingNotifications(page) {
   try {
     await page.evaluate(() => {
-      // 1. Text-based detection: Find any small container containing "recording has started" or "agree to be included"
+      const isToastText = (txt) => {
+        if (!txt) return false;
+        const t = txt.toLowerCase();
+        return (
+          t.includes('recording has started') ||
+          t.includes('recording started') ||
+          t.includes('agree to be included') ||
+          t.includes('transcription has started') ||
+          t.includes('mic has been enabled') ||
+          t.includes('mic has been disabled') ||
+          t.includes('unmute if you') ||
+          t.includes('camera has been enabled') ||
+          t.includes('camera has been disabled') ||
+          t.includes("you're muted") ||
+          t.includes("you are muted") ||
+          t.includes("your mic is muted") ||
+          t.includes("allowed to unmute")
+        );
+      };
+
+      // 1. Text-based detection: Find any small container matching toast text
       const candidateElements = Array.from(document.querySelectorAll('div, section, aside, [role="dialog"], [role="alert"], [role="status"]'));
       for (const el of candidateElements) {
         // Absolute safety: NEVER touch wrappers containing video, canvas, or screenshare/stage
@@ -378,15 +398,10 @@ async function dismissRecordingNotifications(page) {
         }
 
         const rect = el.getBoundingClientRect();
-        // The recording popup is a small card (width <= 650, height <= 320)
+        // Toasts and alerts are small cards (width <= 650, height <= 320)
         if (rect.width > 0 && rect.width <= 650 && rect.height > 0 && rect.height <= 320) {
-          const text = (el.innerText || el.textContent || '').toLowerCase();
-          if (
-            text.includes('recording has started') ||
-            text.includes('recording started') ||
-            text.includes('agree to be included') ||
-            text.includes('transcription has started')
-          ) {
+          const text = el.innerText || el.textContent || '';
+          if (isToastText(text)) {
             // Find and click close (X) button inside the card
             const btns = Array.from(el.querySelectorAll('button, [role="button"], svg, i'));
             for (const b of btns) {
@@ -396,7 +411,7 @@ async function dismissRecordingNotifications(page) {
               }
             }
 
-            // Immediately nuke the container from the visual layout
+            // Immediately nuke the container from visual layout
             el.style.setProperty('display', 'none', 'important');
             el.style.setProperty('visibility', 'hidden', 'important');
             el.style.setProperty('opacity', '0', 'important');
@@ -409,35 +424,38 @@ async function dismissRecordingNotifications(page) {
         }
       }
 
-      // 2. Also search for any floating close button whose parent mentions recording
+      // 2. Also search for any floating close button whose parent mentions recording / mic / camera
       const allButtons = Array.from(document.querySelectorAll('button, [role="button"]'));
       for (const b of allButtons) {
         const label = ((b.getAttribute('aria-label') || '') + ' ' + (b.getAttribute('title') || '') + ' ' + (b.innerText || '')).toLowerCase();
         if (label.includes('close') || label.includes('dismiss') || label.includes('got it') || label === '✕' || label === 'x') {
           const parentText = (b.parentElement ? (b.parentElement.innerText || b.parentElement.textContent || '') : '').toLowerCase();
-          if (parentText.includes('recording') || parentText.includes('privacy policy') || parentText.includes('transcription') || parentText.includes('agree to be included')) {
+          if (
+            parentText.includes('recording') || 
+            parentText.includes('privacy policy') || 
+            parentText.includes('transcription') || 
+            parentText.includes('agree to be included') ||
+            parentText.includes('mic') ||
+            parentText.includes('unmute') ||
+            parentText.includes('camera')
+          ) {
             try { b.click(); } catch(e){}
           }
         }
       }
 
-      // 3. Inject continuous MutationObserver so newly appeared recording popups are nuked in real time
+      // 3. Inject continuous MutationObserver so newly appeared toast popups are nuked in real time immediately
       if (!window.__antiRecordingObserverInstalled) {
         window.__antiRecordingObserverInstalled = true;
         const observer = new MutationObserver(() => {
-          const elements = Array.from(document.querySelectorAll('div, section, aside, [role="dialog"], [role="alert"]'));
+          const elements = Array.from(document.querySelectorAll('div, section, aside, [role="dialog"], [role="alert"], [role="status"]'));
           for (const el of elements) {
             if (el.querySelector('video, canvas, [data-tid="video-gallery"], [data-tid="meeting-canvas"], [data-tid="presentation-stage"]')) continue;
             const r = el.getBoundingClientRect();
             if (r.width > 0 && r.width <= 650 && r.height > 0 && r.height <= 320) {
-              const txt = (el.innerText || el.textContent || '').toLowerCase();
-              if (
-                txt.includes('recording has started') ||
-                txt.includes('recording started') ||
-                txt.includes('agree to be included') ||
-                txt.includes('transcription has started')
-              ) {
-                const closeBtn = el.querySelector('button, [role="button"]');
+              const txt = el.innerText || el.textContent || '';
+              if (isToastText(txt)) {
+                const closeBtn = el.querySelector('button, [role="button"], svg, [aria-label*="Close" i], [aria-label*="Dismiss" i]');
                 if (closeBtn) { try { closeBtn.click(); } catch(e){} }
                 el.style.setProperty('display', 'none', 'important');
                 el.style.setProperty('visibility', 'hidden', 'important');
@@ -1150,6 +1168,11 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     [data-tid*="notification-banner"],
     [data-tid*="recording-notification"],
     .ts-toast-notification,
+    [data-tid*="toast"],
+    .fui-Toast,
+    .fui-ToastContainer,
+    div[class*="Toast"],
+    div[class*="toast"],
     .ui-toast,
     .toast-container,
     .ts-toast-stack,
@@ -1215,10 +1238,32 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                     }
 
                     // Hide Lobby toast cards safely (never parent container)
-                    document.querySelectorAll('[role="alert"], [data-tid*="notification"]').forEach(el => {
+                    const toastCards = document.querySelectorAll('[role="alert"], [role="status"], [data-tid*="notification"], [data-tid*="toast"], div[class*="Toast"], div[class*="toast"]');
+                    toastCards.forEach(el => {
+                        if (isVideoContainer(el)) return;
                         const text = (el.innerText || el.textContent || '').toLowerCase();
-                        if ((text.includes('waiting in the lobby') || text.includes('recording has started')) && !isVideoContainer(el)) {
+                        if (
+                            text.includes('waiting in the lobby') ||
+                            text.includes('recording has started') ||
+                            text.includes('transcription has started') ||
+                            text.includes('mic has been') ||
+                            text.includes('unmute if you') ||
+                            text.includes('camera has been') ||
+                            text.includes("you're muted") ||
+                            text.includes("you are muted") ||
+                            text.includes("your mic is muted") ||
+                            text.includes("allowed to unmute")
+                        ) {
+                            const closeBtn = el.querySelector('button, [role="button"], svg, [aria-label*="Close" i], [aria-label*="Dismiss" i]');
+                            if (closeBtn) { try { closeBtn.click(); } catch(e){} }
                             el.style.setProperty('display', 'none', 'important');
+                            el.style.setProperty('opacity', '0', 'important');
+                            el.style.setProperty('visibility', 'hidden', 'important');
+                            el.style.setProperty('pointer-events', 'none', 'important');
+                            el.style.setProperty('position', 'absolute', 'important');
+                            el.style.setProperty('left', '-9999px', 'important');
+                            el.style.setProperty('height', '0px', 'important');
+                            el.style.setProperty('width', '0px', 'important');
                         }
                     });
 
