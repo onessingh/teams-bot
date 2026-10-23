@@ -1429,6 +1429,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     const teacherScores = {};
     let lockedTeacher = null;
     let teacherMissingCount = 0;
+    let teacherLeftDropCount = 0;
     let noActivityCount = 0;
     
     while (Date.now() - startTime < recordMs) {
@@ -1728,12 +1729,32 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
 
         // 3. Bot is alone in meeting (Waiting for others screen OR 1 participant with no active media/speech/teacher)
         // CRITICAL FIX: NEVER treat currentCount === 0 as alone! In Teams web, 0 means toolbar auto-hid.
+        if (currentCount > 0) {
+            recentCounts.push(currentCount);
+            if (recentCounts.length > 8) recentCounts.shift();
+        }
+
         const hasActiveSpeech = Object.keys(signals).length > 0;
         const isPresentingOrVideo = isSharing || stats.isPresenting || stats.hasActiveVideo;
         const isTeacherActive = !!(lockedTeacher && (
             signals[lockedTeacher] ||
             Object.keys(signals).some(k => k.toLowerCase().includes(lockedTeacher.toLowerCase()))
         ));
+
+        // Track Teacher Presence / Absence
+        if (lockedTeacher) {
+            if (isTeacherActive) {
+                if (teacherMissingCount > 0) {
+                    console.log(`[DEBUG] 👨‍🏫 Teacher "${lockedTeacher}" returned / active again! (was away for ${(teacherMissingCount * 15 / 60).toFixed(1)}m)`);
+                }
+                teacherMissingCount = 0;
+            } else {
+                teacherMissingCount++;
+                if (teacherMissingCount % 4 === 0 && currentCount > 2) {
+                    console.log(`[DEBUG] ⏳ Teacher "${lockedTeacher}" not active for ${(teacherMissingCount * 15 / 60).toFixed(1)}m, but ${currentCount} attendees still present. Keeping recording active while students wait...`);
+                }
+            }
+        }
 
         // Alone only if:
         // A) Teams explicitly displays "Waiting for others to join" screen
@@ -1742,17 +1763,22 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             currentCount === 1 && stats.hasCallStage && !stats.inLobby && !isPresentingOrVideo && !hasActiveSpeech && !isTeacherActive
         );
 
+        const hadRealClass = maxParticipants >= 3 && elapsedMins >= 15;
+
         if (isAlone) {
             aloneCount++;
 
             // USER STRICT RULES:
             // 1. If genuine "Waiting for others to join" screen appeared after real class ran (peak >= 3 and elapsed >= 15m):
             //    Class is FINISHED! Leave promptly in 2 checks (30s) so bot exits immediately ("clas khatam hone me waiting aaye to turant left karna chahiye").
-            // 2. If waiting screen did NOT appear (isWaitingForOthers: false), but count is 1 with no presentation/speech:
-            //    Require at least 8 checks (2 mins) to guard against temporary roster flickers.
-            // 3. If class hasn't started yet (peak < 3), teacher might be late. Bot MUST WAIT patiently up to 30 mins.
-            const hadRealClass = maxParticipants >= 3 && elapsedMins >= 15;
-            const requiredAloneChecks = stats.isWaitingForOthers ? (hadRealClass ? 2 : 8) : 8;
+            // 2. If teacher has been missing for >= 30s AND students also left (count === 1 with no media):
+            //    Both teacher & students departed -> Leave promptly in 2 checks (30s).
+            // 3. If waiting screen did NOT appear, but count is 1 with no teacher/speech:
+            //    Require 8 checks (2 mins) unless teacher is confirmed gone.
+            // 4. If class hasn't started yet (peak < 3), teacher might be late. Bot MUST WAIT patiently up to 30 mins.
+            const teacherGoneAndCountOne = hadRealClass && (teacherMissingCount >= 2 || !lockedTeacher) && currentCount === 1;
+            const fastExitAlone = stats.isWaitingForOthers || teacherGoneAndCountOne;
+            const requiredAloneChecks = fastExitAlone ? (hadRealClass ? 2 : 8) : 8;
             const canExitAlone = hadRealClass || elapsedMins >= 30;
 
             if (canExitAlone) {
@@ -1770,7 +1796,26 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             aloneCount = 0;
         }
 
-        // 4. Almost empty meeting (<= 2 participants left when class was large, e.g. peak >= 20)
+        // 4. Teacher Left + Students Dropping Rule (30s Exit after Teacher + Students Departure):
+        // If teacher is missing for >= 30s (>= 2 checks) AND students also drop to <= 2 (or <= 20% of peak):
+        // Meaning teacher ended class and students are clearing out!
+        const teacherLeftAndStudentsDropped = hadRealClass && lockedTeacher && teacherMissingCount >= 2 && currentCount > 0 && (
+            currentCount <= 2 ||
+            (maxParticipants >= 8 && currentCount <= Math.max(2, Math.floor(maxParticipants * 0.2)))
+        ) && !isPresentingOrVideo && !hasActiveSpeech;
+
+        if (teacherLeftAndStudentsDropped) {
+            teacherLeftDropCount++;
+            console.log(`[DEBUG] 🎓 Teacher "${lockedTeacher}" left and attendees dropped to ${currentCount} (Peak: ${maxParticipants}) (${teacherLeftDropCount}/2 checks - 30s)...`);
+            if (teacherLeftDropCount >= 2) {
+                console.log(`🎓 Class finished! Teacher "${lockedTeacher}" left and students departed (only ${currentCount} remain, peak: ${maxParticipants}). Stopping recording.`);
+                meetingEnded = true;
+            }
+        } else {
+            teacherLeftDropCount = 0;
+        }
+
+        // 5. Almost empty meeting (<= 2 participants left when class was large, e.g. peak >= 20)
         // STRICT: Only after 30 minutes and no active presentation/speech!
         if (maxParticipants >= 20 && currentCount > 0 && currentCount <= 2 && elapsedMins >= 30 && !isPresentingOrVideo && !hasActiveSpeech) {
             smallMeetingDropCount++;
