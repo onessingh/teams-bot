@@ -1726,16 +1726,20 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             callDisconnectedCount = 0;
         }
 
-        // 3. Bot is alone in meeting (Waiting for others screen OR 1 participant with no active media/speech)
+        // 3. Bot is alone in meeting (Waiting for others screen OR 1 participant with no active media/speech/teacher)
         // CRITICAL FIX: NEVER treat currentCount === 0 as alone! In Teams web, 0 means toolbar auto-hid.
         const hasActiveSpeech = Object.keys(signals).length > 0;
         const isPresentingOrVideo = isSharing || stats.isPresenting || stats.hasActiveVideo;
+        const isTeacherActive = !!(lockedTeacher && (
+            signals[lockedTeacher] ||
+            Object.keys(signals).some(k => k.toLowerCase().includes(lockedTeacher.toLowerCase()))
+        ));
 
         // Alone only if:
         // A) Teams explicitly displays "Waiting for others to join" screen
-        // B) count === 1 on call stage, AND no presentation/screen share is active, AND no video is playing, AND nobody is speaking
+        // B) count === 1 on call stage, AND no presentation/screen share is active, AND no video is playing, AND nobody is speaking, AND identified teacher is NOT active
         const isAlone = stats.isWaitingForOthers || (
-            currentCount === 1 && stats.hasCallStage && !stats.inLobby && !isPresentingOrVideo && !hasActiveSpeech
+            currentCount === 1 && stats.hasCallStage && !stats.inLobby && !isPresentingOrVideo && !hasActiveSpeech && !isTeacherActive
         );
 
         if (isAlone) {
