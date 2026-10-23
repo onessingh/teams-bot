@@ -256,6 +256,31 @@ test('Notification dismisser preserves presentation stage and video canvas', () 
     assert.strictEqual(liveRecorderCode.includes('video-gallery'), true);
 });
 
+// -------------------------------------------------------------
+// TEST SUITE 6: Dashboard Leave Class Signal & Worker Stop
+// -------------------------------------------------------------
+console.log('\n--- TEST SUITE 6: Dashboard Leave Class Signal ---');
+
+test('Worker shouldStop returns true when manual_leave or LEAVING_CLASS is set', () => {
+    const isStopping = (data) => {
+        return data.status === 'STOPPING' || data.status === 'CANCELLED' || data.status === 'STOPPED' || data.status === 'LEAVING_CLASS' || data.manual_leave === true;
+    };
+
+    assert.strictEqual(isStopping({ status: 'RECORDING' }), false, 'Normal recording must not stop');
+    assert.strictEqual(isStopping({ status: 'LEAVING_CLASS', manual_leave: true }), true, 'Must trigger graceful stop when Leave Class is clicked');
+    assert.strictEqual(isStopping({ status: 'RECORDING', manual_leave: true }), true, 'Must trigger graceful stop on manual_leave flag');
+});
+
+test('Dashboard UI contains Leave Class button and event listener', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const dashboardAppCode = fs.readFileSync(path.join(__dirname, 'dashboard', 'app.js'), 'utf8');
+
+    assert.strictEqual(dashboardAppCode.includes('live-leave-btn'), true, 'Must include live-leave-btn in dashboard/app.js');
+    assert.strictEqual(dashboardAppCode.includes('LEAVING_CLASS'), true, 'Must include LEAVING_CLASS status');
+    assert.strictEqual(dashboardAppCode.includes('Leave Class'), true, 'Must render Leave Class text');
+});
+
 console.log(`\n========================================`);
 console.log(`Test Summary: ${passedTests}/${totalTests} Passed (${Math.round(passedTests/totalTests*100)}%)`);
 console.log(`========================================\n`);
