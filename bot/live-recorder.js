@@ -385,12 +385,30 @@ async function dismissRecordingNotifications(page) {
           t.includes("you're muted") ||
           t.includes("you are muted") ||
           t.includes("your mic is muted") ||
-          t.includes("allowed to unmute")
+          t.includes("allowed to unmute") ||
+          t.includes("waiting in the lobby") ||
+          t.includes("is waiting in the lobby") ||
+          t.includes("in the lobby") ||
+          t.includes("view lobby") ||
+          t.includes("admit")
         );
       };
 
+      const findCloseButton = (container) => {
+        let b = container.querySelector('[aria-label*="Close" i], [aria-label*="Dismiss" i], [data-tid*="dismiss"], [data-tid*="close"]');
+        if (!b) {
+          const btns = Array.from(container.querySelectorAll('button, [role="button"], svg'));
+          b = btns.find(btn => {
+            const txt = (btn.textContent || '').trim().toLowerCase();
+            const lbl = ((btn.getAttribute('aria-label') || '') + ' ' + (btn.getAttribute('title') || '')).toLowerCase();
+            return txt === '✕' || txt === 'x' || txt === 'dismiss' || lbl.includes('close') || lbl.includes('dismiss');
+          }) || container.querySelector('svg') || btns[0];
+        }
+        return b;
+      };
+
       // 1. Text-based detection: Find any small container matching toast text
-      const candidateElements = Array.from(document.querySelectorAll('div, section, aside, [role="dialog"], [role="alert"], [role="status"]'));
+      const candidateElements = Array.from(document.querySelectorAll('div, section, aside, header, [role="dialog"], [role="alert"], [role="status"], [role="banner"]'));
       for (const el of candidateElements) {
         // Absolute safety: NEVER touch wrappers containing video, canvas, or screenshare/stage
         if (el.querySelector('video, canvas, [data-tid="video-gallery"], [data-tid="meeting-canvas"], [data-tid="calling-roster-stage"], [data-tid="presentation-stage"], [data-tid*="screen-share"], [data-tid*="sharing"]')) {
@@ -402,14 +420,9 @@ async function dismissRecordingNotifications(page) {
         if (rect.width > 0 && rect.width <= 650 && rect.height > 0 && rect.height <= 320) {
           const text = el.innerText || el.textContent || '';
           if (isToastText(text)) {
-            // Find and click close (X) button inside the card
-            const btns = Array.from(el.querySelectorAll('button, [role="button"], svg, i'));
-            for (const b of btns) {
-              const label = ((b.getAttribute('aria-label') || '') + ' ' + (b.getAttribute('title') || '') + ' ' + (b.innerText || '')).toLowerCase();
-              if (label.includes('close') || label.includes('dismiss') || label.includes('✕') || label.includes('x') || label.includes('got it') || b.tagName === 'SVG' || b.querySelector('svg')) {
-                try { b.click(); } catch(e){}
-              }
-            }
+            // Find and click close (X) button inside the card specifically
+            const closeBtn = findCloseButton(el);
+            if (closeBtn) { try { closeBtn.click(); } catch(e){} }
 
             // Immediately nuke the container from visual layout
             el.style.setProperty('display', 'none', 'important');
@@ -424,7 +437,7 @@ async function dismissRecordingNotifications(page) {
         }
       }
 
-      // 2. Also search for any floating close button whose parent mentions recording / mic / camera
+      // 2. Also search for any floating close button whose parent mentions recording / mic / camera / lobby
       const allButtons = Array.from(document.querySelectorAll('button, [role="button"]'));
       for (const b of allButtons) {
         const label = ((b.getAttribute('aria-label') || '') + ' ' + (b.getAttribute('title') || '') + ' ' + (b.innerText || '')).toLowerCase();
@@ -437,7 +450,8 @@ async function dismissRecordingNotifications(page) {
             parentText.includes('agree to be included') ||
             parentText.includes('mic') ||
             parentText.includes('unmute') ||
-            parentText.includes('camera')
+            parentText.includes('camera') ||
+            parentText.includes('lobby')
           ) {
             try { b.click(); } catch(e){}
           }
@@ -448,14 +462,14 @@ async function dismissRecordingNotifications(page) {
       if (!window.__antiRecordingObserverInstalled) {
         window.__antiRecordingObserverInstalled = true;
         const observer = new MutationObserver(() => {
-          const elements = Array.from(document.querySelectorAll('div, section, aside, [role="dialog"], [role="alert"], [role="status"]'));
+          const elements = Array.from(document.querySelectorAll('div, section, aside, header, [role="dialog"], [role="alert"], [role="status"], [role="banner"]'));
           for (const el of elements) {
             if (el.querySelector('video, canvas, [data-tid="video-gallery"], [data-tid="meeting-canvas"], [data-tid="presentation-stage"]')) continue;
             const r = el.getBoundingClientRect();
             if (r.width > 0 && r.width <= 650 && r.height > 0 && r.height <= 320) {
               const txt = el.innerText || el.textContent || '';
               if (isToastText(txt)) {
-                const closeBtn = el.querySelector('button, [role="button"], svg, [aria-label*="Close" i], [aria-label*="Dismiss" i]');
+                const closeBtn = findCloseButton(el);
                 if (closeBtn) { try { closeBtn.click(); } catch(e){} }
                 el.style.setProperty('display', 'none', 'important');
                 el.style.setProperty('visibility', 'hidden', 'important');
@@ -1177,6 +1191,18 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     .toast-container,
     .ts-toast-stack,
     div[aria-label*="notification" i],
+    [data-tid*="lobby" i],
+    [data-tid*="Lobby" i],
+    [class*="lobby" i],
+    [class*="Lobby" i],
+    div[aria-label*="lobby" i],
+    aside[aria-label*="lobby" i],
+    section[aria-label*="lobby" i],
+    [data-tid="banner"],
+    [data-tid^="banner-"],
+    div[class*="banner" i],
+    aside[class*="banner" i],
+    .fui-Banner,
     div[class*="lobby-notification"],
     div[class*="LobbyNotification"],
     div[class*="lobby-admission"],
@@ -1237,13 +1263,19 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                         banner.style.setProperty('display', 'none', 'important');
                     }
 
-                    // Hide Lobby toast cards safely (never parent container)
-                    const toastCards = document.querySelectorAll('[role="alert"], [role="status"], [data-tid*="notification"], [data-tid*="toast"], div[class*="Toast"], div[class*="toast"]');
+                    // Hide Lobby & Toast cards safely (never parent container)
+                    const toastCards = document.querySelectorAll(
+                        '[role="alert"], [role="status"], [role="region"], [role="banner"], ' +
+                        '[data-tid*="notification"], [data-tid*="toast"], [data-tid*="banner"], [data-tid*="lobby"], ' +
+                        'aside, section, header, div[class*="Toast" i], div[class*="toast" i], div[class*="banner" i], div[class*="lobby" i]'
+                    );
                     toastCards.forEach(el => {
                         if (isVideoContainer(el)) return;
                         const text = (el.innerText || el.textContent || '').toLowerCase();
                         if (
                             text.includes('waiting in the lobby') ||
+                            text.includes('in the lobby') ||
+                            text.includes('view lobby') ||
                             text.includes('recording has started') ||
                             text.includes('transcription has started') ||
                             text.includes('mic has been') ||
