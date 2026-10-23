@@ -1685,7 +1685,15 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
               currentCount = 1;
             }
 
-            return { ended, currentCount, inLobby, hasCallStage, inChatView, isWaitingForOthers };
+            // Check active presentation or screen sharing
+            const isPresenting = !!document.querySelector(
+              '[data-tid="presentation-stage"], [data-tid="screen-sharing-canvas"], [data-tid="screen-share"], [data-tid*="sharing"], [class*="screen-share"]'
+            );
+
+            // Check active video streaming (video element that is playing and has non-zero frame dimensions)
+            const hasActiveVideo = Array.from(document.querySelectorAll('video')).some(v => v.videoWidth > 0 && !v.paused && v.readyState >= 2);
+
+            return { ended, currentCount, inLobby, hasCallStage, inChatView, isWaitingForOthers, isPresenting, hasActiveVideo };
         });
         
         let meetingEnded = stats.ended;
@@ -1718,24 +1726,35 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             callDisconnectedCount = 0;
         }
 
-        // 3. Bot is alone in meeting (Waiting for others screen OR 1 participant)
+        // 3. Bot is alone in meeting (Waiting for others screen OR 1 participant with no active media/speech)
         // CRITICAL FIX: NEVER treat currentCount === 0 as alone! In Teams web, 0 means toolbar auto-hid.
-        const isAlone = stats.isWaitingForOthers || (currentCount === 1 && stats.hasCallStage && !stats.inLobby);
+        const hasActiveSpeech = Object.keys(signals).length > 0;
+        const isPresentingOrVideo = isSharing || stats.isPresenting || stats.hasActiveVideo;
+
+        // Alone only if:
+        // A) Teams explicitly displays "Waiting for others to join" screen
+        // B) count === 1 on call stage, AND no presentation/screen share is active, AND no video is playing, AND nobody is speaking
+        const isAlone = stats.isWaitingForOthers || (
+            currentCount === 1 && stats.hasCallStage && !stats.inLobby && !isPresentingOrVideo && !hasActiveSpeech
+        );
+
         if (isAlone) {
             aloneCount++;
 
             // USER STRICT RULES:
-            // 1. If class already ran (peak attendees >= 3 and elapsed >= 15m) and then everyone leaves ("Waiting for others to join"):
+            // 1. If genuine "Waiting for others to join" screen appeared after real class ran (peak >= 3 and elapsed >= 15m):
             //    Class is FINISHED! Leave promptly in 2 checks (30s) so bot exits immediately ("clas khatam hone me waiting aaye to turant left karna chahiye").
-            // 2. If class hasn't started yet (peak < 3), teacher might be late. Bot MUST WAIT patiently up to 30 mins.
+            // 2. If waiting screen did NOT appear (isWaitingForOthers: false), but count is 1 with no presentation/speech:
+            //    Require at least 8 checks (2 mins) to guard against temporary roster flickers.
+            // 3. If class hasn't started yet (peak < 3), teacher might be late. Bot MUST WAIT patiently up to 30 mins.
             const hadRealClass = maxParticipants >= 3 && elapsedMins >= 15;
-            const requiredAloneChecks = hadRealClass ? 2 : 8; // 30s after class completed vs 2 mins general
+            const requiredAloneChecks = stats.isWaitingForOthers ? (hadRealClass ? 2 : 8) : 8;
             const canExitAlone = hadRealClass || elapsedMins >= 30;
 
             if (canExitAlone) {
                 console.log(`[DEBUG] Waiting/Alone screen detected after ${elapsedMins.toFixed(1)} mins (WaitingForOthers: ${!!stats.isWaitingForOthers}, count: ${currentCount}, peak: ${maxParticipants}) (${aloneCount}/${requiredAloneChecks} checks)...`);
                 if (aloneCount >= requiredAloneChecks) {
-                    console.log(`🎓 Meeting/Class finished! Bot alone on stage after ${elapsedMins.toFixed(1)} mins (Peak: ${maxParticipants}). Stopping recording.`);
+                    console.log(`🎓 Meeting/Class finished! Bot alone on stage after ${elapsedMins.toFixed(1)} mins (Peak: ${maxParticipants}, WaitingForOthers: ${!!stats.isWaitingForOthers}). Stopping recording.`);
                     meetingEnded = true;
                 }
             } else {
@@ -1743,20 +1762,20 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                     console.log(`[DEBUG] ⏳ Waiting for teacher/class to start (${elapsedMins.toFixed(1)}m / 30.0m mandatory minimum wait). Teacher late or early join, keeping recording active...`);
                 }
             }
-        } else if (currentCount > 1) {
+        } else {
             aloneCount = 0;
         }
 
         // 4. Almost empty meeting (<= 2 participants left when class was large, e.g. peak >= 20)
-        // STRICT: Only after 30 minutes!
-        if (maxParticipants >= 20 && currentCount > 0 && currentCount <= 2 && elapsedMins >= 30) {
+        // STRICT: Only after 30 minutes and no active presentation/speech!
+        if (maxParticipants >= 20 && currentCount > 0 && currentCount <= 2 && elapsedMins >= 30 && !isPresentingOrVideo && !hasActiveSpeech) {
             smallMeetingDropCount++;
             console.log(`[DEBUG] Almost empty meeting: only ${currentCount} participants left (Peak: ${maxParticipants}) (${smallMeetingDropCount}/12 checks - 3 mins)...`);
             if (smallMeetingDropCount >= 12) {
                 console.log(`🎓 Meeting almost empty (only ${currentCount} participants left for >3 minutes after ${elapsedMins.toFixed(1)}m). Stopping recording.`);
                 meetingEnded = true;
             }
-        } else if (currentCount > 2) {
+        } else if (currentCount > 2 || isPresentingOrVideo || hasActiveSpeech) {
             smallMeetingDropCount = 0;
         }
 
