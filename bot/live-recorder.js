@@ -558,7 +558,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     const page = await context.newPage();
     page.on('console', msg => console.log(`[Teams Live] ${msg.text()}`));
 
-    // Auto-close external support tabs if opened in a secondary tab (never close main recorder page!)
+    // Auto-close external support tabs, and keep main recording page in front if RTT popup window opens
     context.on('page', async (popup) => {
       try {
         if (popup === page) return; // Never close main meeting page!
@@ -567,6 +567,9 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         if (targetUrl.includes('support.microsoft.com') || targetUrl.includes('learn.microsoft.com')) {
           console.log('[DEBUG] Auto-closing external support tab:', targetUrl);
           await popup.close().catch(() => {});
+        } else {
+          console.log('[DEBUG] Secondary popup window detected (e.g. popped out RTT). Keeping main recording page in front...');
+          await page.bringToFront();
         }
       } catch(e) {}
     });
@@ -1142,12 +1145,13 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             style.textContent = `
     * { cursor: none !important; }
     
-    /* Explicitly protect video stage and canvas from ever being hidden */
+    /* Explicitly protect video stage and canvas from ever being hidden & ensure 100% full width */
     video,
     canvas,
     [data-tid="calling-roster-stage"],
     [data-tid="video-gallery"],
     [data-tid="meeting-canvas"],
+    [data-tid="presentation-stage"],
     [data-tid="screen-sharing-canvas"],
     div[class*="calling-stage"],
     div[class*="video-gallery"] {
@@ -1155,6 +1159,9 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         visibility: visible !important;
         opacity: 1 !important;
         pointer-events: auto !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        flex: 1 1 100% !important;
     }
 
     /* Hide top meeting controls toolbar, app headers, and call timer */
@@ -1206,7 +1213,24 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
     div[class*="lobby-notification"],
     div[class*="LobbyNotification"],
     div[class*="lobby-admission"],
-    div[class*="LobbyAdmission"] {
+    div[class*="LobbyAdmission"],
+    /* Suppress and hide RTT (Real-Time Text) and live captions side panels from squeezing presentation stage */
+    aside[aria-label*="Real-time text" i],
+    aside[aria-label*="RTT" i],
+    aside[data-tid*="rtt" i],
+    div[aria-label*="Real-time text" i],
+    div[aria-label*="RTT" i],
+    [data-tid*="rtt-pane" i],
+    [data-tid*="rtt-panel" i],
+    [data-tid*="rtt-side" i],
+    [data-tid*="rtt-container" i],
+    [data-tid*="live-captions-pane" i],
+    [data-tid*="captions-pane" i],
+    div[class*="rtt-pane" i],
+    div[class*="rtt-panel" i],
+    div[class*="rttContainer" i],
+    div[class*="rtt-container" i],
+    div[class*="rttPane" i] {
         display: none !important;
         opacity: 0 !important;
         visibility: hidden !important;
@@ -1297,6 +1321,48 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                             el.style.setProperty('height', '0px', 'important');
                             el.style.setProperty('width', '0px', 'important');
                         }
+                    });
+
+                    // Auto pop-out or close RTT (Real-Time Text) / live captions side panels to prevent shrinking video
+                    const rttPopoutBtn = document.querySelector(
+                        'button[aria-label*="Open RTT" i], button[aria-label*="Open captions" i], ' +
+                        'button[aria-label*="new window" i], button[aria-label*="pop out" i], ' +
+                        'button[title*="Open RTT" i], button[title*="in new window" i], ' +
+                        'button[data-tid*="open-rtt"], button[data-tid*="popout-rtt"]'
+                    );
+                    if (rttPopoutBtn) {
+                        try { rttPopoutBtn.click(); } catch(e){}
+                    }
+
+                    const rttCloseBtn = document.querySelector(
+                        'button[aria-label*="Close real-time text" i], button[aria-label*="Close RTT" i], ' +
+                        'button[aria-label*="Close captions" i], button[aria-label*="Close pane" i], ' +
+                        '[data-tid*="rtt"] button[aria-label*="Close" i], [aria-label*="RTT" i] button[aria-label*="Close" i]'
+                    );
+                    if (rttCloseBtn) {
+                        try { rttCloseBtn.click(); } catch(e){}
+                    }
+
+                    // Force any RTT side panel to 0 width & calling stage to 100% width
+                    const rttPanels = document.querySelectorAll(
+                        'aside[aria-label*="Real-time text" i], aside[aria-label*="RTT" i], aside[data-tid*="rtt" i], ' +
+                        '[data-tid*="rtt-pane" i], [data-tid*="rtt-panel" i], [data-tid*="rtt-side" i], ' +
+                        'div[class*="rtt-pane" i], div[class*="rtt-panel" i], div[class*="rttContainer" i], div[class*="rtt-container" i]'
+                    );
+                    rttPanels.forEach(p => {
+                        p.style.setProperty('display', 'none', 'important');
+                        p.style.setProperty('width', '0px', 'important');
+                        p.style.setProperty('max-width', '0px', 'important');
+                        p.style.setProperty('min-width', '0px', 'important');
+                        p.style.setProperty('flex', '0 0 0px', 'important');
+                        p.style.setProperty('visibility', 'hidden', 'important');
+                    });
+
+                    const activeStages = document.querySelectorAll('[data-tid="calling-roster-stage"], [data-tid="meeting-canvas"], [data-tid="presentation-stage"], div[class*="calling-stage"]');
+                    activeStages.forEach(st => {
+                        st.style.setProperty('width', '100%', 'important');
+                        st.style.setProperty('max-width', '100%', 'important');
+                        st.style.setProperty('flex', '1 1 100%', 'important');
                     });
 
                 } catch (err) {}
