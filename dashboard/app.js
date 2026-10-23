@@ -76,8 +76,22 @@ addBtn.addEventListener('click', () => {
     }
 });
 
-// Handle Delete clicks
-queueList.addEventListener('click', (e) => {
+// Handle Leave and Delete clicks
+queueList.addEventListener('click', async (e) => {
+    if (e.target.closest('.leave-btn')) {
+        const btn = e.target.closest('.leave-btn');
+        const id = btn.getAttribute('data-id');
+        if (confirm('Are you sure you want the bot to leave this class now?\n\nRecording will be stopped, saved, and uploaded automatically.')) {
+            btn.disabled = true;
+            btn.textContent = 'Leaving...';
+            btn.className = 'text-white font-bold bg-gray-500 px-2.5 py-1 rounded-lg text-[10px] uppercase tracking-wider cursor-not-allowed';
+            await update(ref(db, `queue/${id}`), {
+                manual_leave: true,
+                status: 'LEAVING_CLASS'
+            });
+        }
+        return;
+    }
     if (e.target.closest('.delete-btn')) {
         const btn = e.target.closest('.delete-btn');
         const id = btn.getAttribute('data-id');
@@ -131,9 +145,16 @@ onValue(ref(db, 'queue'), (snapshot) => {
         
         const html = `
             <li class="queue-item bg-white p-4 border border-gray-100 rounded-xl shadow-sm relative group">
-                <button class="delete-btn absolute top-3 right-3 text-red-600 font-bold bg-red-50 hover:bg-red-100 px-3 py-1 rounded-lg text-[10px] uppercase tracking-wider border border-red-200 transition-colors" data-id="${item.id}" title="Delete this item">
-                    ❌ Delete
-                </button>
+                <div class="absolute top-3 right-3 flex items-center gap-1.5">
+                    ${(item.status === 'RECORDING' || item.status === 'WAITING_IN_LOBBY' || item.status === 'IN_LOBBY' || item.status === 'ADMITTED_PREPARING_UI' || item.status === 'WAITING_FOR_SCHEDULED_TIME') ? `
+                        <button class="leave-btn text-white font-bold bg-amber-600 hover:bg-amber-700 px-2.5 py-1 rounded-lg text-[10px] uppercase tracking-wider border border-amber-500 shadow-sm transition-all flex items-center gap-1 cursor-pointer" data-id="${item.id}" title="Leave class now, save video and upload to YouTube">
+                            🚪 Leave Class
+                        </button>
+                    ` : ''}
+                    <button class="delete-btn text-red-600 font-bold bg-red-50 hover:bg-red-100 px-2.5 py-1 rounded-lg text-[10px] uppercase tracking-wider border border-red-200 transition-colors" data-id="${item.id}" title="Delete this item">
+                        ❌ Delete
+                    </button>
+                </div>
                 <div class="flex justify-between items-start mb-1 pr-16">
                     <span class="font-bold text-sm text-gray-800 truncate pr-2" title="${item.title}">${item.title}</span>
                 </div>
@@ -482,15 +503,23 @@ onValue(ref(db, 'live_queue'), (snapshot) => {
           if (item.status === 'RECORDING') statusColor = "bg-red-100 text-red-700 animate-pulse";
           if (item.status === 'WAITING_FOR_UPLOAD_SLOT') { statusColor = "bg-amber-100 text-amber-700 animate-pulse"; friendlyStatus = "WAITING FOR UPLOAD SLOT"; }
           if (item.status === 'UPLOADING') { statusColor = "bg-pink-100 text-pink-700 animate-pulse"; friendlyStatus = "UPLOADING TO YOUTUBE " + (item.upload_progress || 0) + "%"; }
+          if (item.status === 'LEAVING_CLASS') { statusColor = "bg-amber-100 text-amber-700 animate-pulse"; friendlyStatus = "LEAVING CLASS..."; }
           if (item.status === 'COMPLETED') statusColor = "bg-green-100 text-green-700";
           if (item.status === 'FAILED' || item.status === 'TEAMS_LOGIN_REQUIRED') statusColor = "bg-red-100 text-red-700";
           statusText = friendlyStatus;
         
         const html = `
             <li class="queue-item bg-white p-4 border border-gray-100 rounded-xl shadow-sm relative group">
-                <button class="live-delete-btn absolute top-3 right-3 text-red-600 font-bold bg-red-50 hover:bg-red-100 px-3 py-1 rounded-lg text-[10px] uppercase tracking-wider border border-red-200 transition-colors" data-id="${item.id}" title="Delete this item">
-                    Delete
-                </button>
+                <div class="absolute top-3 right-3 flex items-center gap-1.5">
+                    ${(item.status === 'RECORDING' || item.status === 'WAITING_IN_LOBBY' || item.status === 'IN_LOBBY' || item.status === 'ADMITTED_PREPARING_UI' || item.status === 'WAITING_FOR_SCHEDULED_TIME' || item.status === 'STARTING_BROWSER' || item.status === 'OPENING_RECORDING') ? `
+                        <button class="live-leave-btn text-white font-bold bg-amber-600 hover:bg-amber-700 px-2.5 py-1 rounded-lg text-[10px] uppercase tracking-wider border border-amber-500 shadow-sm transition-all flex items-center gap-1 cursor-pointer" data-id="${item.id}" title="Leave class now, save video and upload to YouTube">
+                            🚪 Leave Class
+                        </button>
+                    ` : ''}
+                    <button class="live-delete-btn text-red-600 font-bold bg-red-50 hover:bg-red-100 px-2.5 py-1 rounded-lg text-[10px] uppercase tracking-wider border border-red-200 transition-colors" data-id="${item.id}" title="Delete this item">
+                        Delete
+                    </button>
+                </div>
                 <div class="flex justify-between items-start mb-1 pr-16">
                     <span class="font-bold text-sm text-gray-800 truncate pr-2" title="${item.title}">${item.title}</span>
                 </div>
@@ -521,6 +550,22 @@ onValue(ref(db, 'live_queue'), (snapshot) => {
         liveQueueList.innerHTML = '<div class="text-center text-gray-400 py-8 text-sm">No live classes scheduled.</div>';
     }
     
+    document.querySelectorAll('.live-leave-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            const btnEl = e.currentTarget;
+            const id = btnEl.getAttribute('data-id');
+            if (confirm('Are you sure you want the bot to leave this class now?\n\nThe bot will hang up gracefully, save the recorded video, and upload it automatically to YouTube/Solmates.')) {
+                btnEl.disabled = true;
+                btnEl.textContent = 'Leaving...';
+                btnEl.className = 'text-white font-bold bg-gray-500 px-2.5 py-1 rounded-lg text-[10px] uppercase tracking-wider cursor-not-allowed';
+                await update(ref(db, 'live_queue/' + id), {
+                    manual_leave: true,
+                    status: 'LEAVING_CLASS'
+                });
+            }
+        });
+    });
+
     document.querySelectorAll('.live-delete-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
             const id = e.target.getAttribute('data-id');

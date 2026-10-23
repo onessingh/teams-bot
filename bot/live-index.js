@@ -220,10 +220,10 @@ async function processItem(item) {
         onStatus: async (statusStr) => { await ref.update({ status: statusStr, updatedAt: Date.now() }); },
         onFrame: async (b64) => { await ref.update({ live_frame: b64 }); },
         shouldStop: async () => {
-          const snap = await ref.child('status').once('value');
+          const snap = await ref.once('value');
           if (!snap.exists()) return true; // Item was deleted from dashboard!
-          const val = snap.val();
-          return val === 'STOPPING' || val === 'CANCELLED' || val === 'STOPPED';
+          const data = snap.val() || {};
+          return data.status === 'STOPPING' || data.status === 'CANCELLED' || data.status === 'STOPPED' || data.status === 'LEAVING_CLASS' || data.manual_leave === true;
         },
         onAuthError: async (b64Image) => {
           await db.ref('state/mfa_screenshot').set(b64Image);

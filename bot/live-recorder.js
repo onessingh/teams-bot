@@ -1389,7 +1389,14 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         const waitMs = options.scheduledTime - Date.now();
         if (options.onStatus) await options.onStatus('WAITING_FOR_SCHEDULED_TIME');
         console.log(`[DEBUG] Joined early. Waiting ${Math.floor(waitMs/1000)}s until scheduled time to start recording...`);
-        await page.waitForTimeout(waitMs);
+        const waitStart = Date.now();
+        while (Date.now() - waitStart < waitMs) {
+            if (options.shouldStop && await options.shouldStop().catch(() => false)) {
+                console.log('🛑 Remote stop / leave signal received from Dashboard while waiting for scheduled time.');
+                break;
+            }
+            await sleep(2000);
+        }
     }
 
     // ROSTER DEBUG DUMP FOR TEACHER SCORING & CLASS END DETECTION
@@ -1444,7 +1451,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
       loopCount++;
 
       if (options.shouldStop && await options.shouldStop().catch(() => false)) {
-        console.log('🛑 Remote stop signal received from Firebase. Exiting recording loop cleanly!');
+        console.log('🛑 Dashboard Leave Button / Remote stop signal received! Leaving class and saving recording...');
         break;
       }
 
