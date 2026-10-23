@@ -1549,10 +1549,6 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
               currentCount = galleryTiles.length;
             }
             
-            const inLobby = text.includes("we've let people in the meeting know you're waiting") || 
-                            text.includes("when the meeting starts, we'll let people know") ||
-                            text.includes("waiting in the lobby");
-            
             // Active call stage indicators
             const hasCallStage = !!(
                 document.querySelector('[data-tid="calling-roster-stage"], [data-tid="video-gallery"], [data-tid="meeting-canvas"], [data-tid="presentation-stage"], [data-tid="screen-sharing-canvas"]') ||
@@ -1560,6 +1556,13 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                 document.querySelector('[data-tid="meeting-toolbar"], [data-tid="call-controls"]') ||
                 galleryTiles.length > 0 ||
                 document.querySelector('video')
+            );
+
+            // Bot in Lobby: ONLY true if the bot is NOT inside an active call stage AND text indicates this user is waiting for admission
+            const inLobby = !hasCallStage && (
+                text.includes("we've let people in the meeting know you're waiting") || 
+                text.includes("when the meeting starts, we'll let people know") ||
+                (text.includes("waiting in the lobby") && currentCount <= 1)
             );
 
             // In Teams Chat view (call ended / disconnected / switched to chat window)
@@ -1681,7 +1684,8 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         }
 
         // 6. Lobby Timeout Logic (30 minutes)
-        if (stats.inLobby) {
+        // STRICT: Only applies if the bot is actually stuck in the lobby waiting to be admitted (!hasCallStage and currentCount <= 1)
+        if (stats.inLobby && !stats.hasCallStage && currentCount <= 1) {
             lobbyWaitLoops++;
             if (lobbyWaitLoops > 120) {
                 console.log(`[DEBUG] Lobby timeout reached (30 minutes without being admitted). Ending meeting.`);
