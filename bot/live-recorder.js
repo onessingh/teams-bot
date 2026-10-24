@@ -1460,6 +1460,9 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         await page.mouse.move(400 + (loopCount % 10) * 30, 25 + (loopCount % 3) * 5);
       } catch (e) {}
 
+      let signals = {};
+      let isSharing = false;
+
       // Teacher Scoring & Smart Departure Detection
       try {
         const participantData = await page.evaluate(() => {
@@ -1557,8 +1560,8 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
           return { signals, isSharing };
         });
 
-        const signals = participantData.signals || {};
-        const isSharing = participantData.isSharing;
+        signals = participantData.signals || {};
+        isSharing = participantData.isSharing;
 
         // Accumulate scores continuously across the class
         for (const [name, score] of Object.entries(signals)) {

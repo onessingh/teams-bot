@@ -203,12 +203,32 @@ function getShortSubjectCode(rawSubject) {
   return clean.slice(0, 10).trim();
 }
 
+function stemWord(w) {
+  if (!w) return '';
+  w = w.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (w.endsWith('ies') && w.length > 4) return w.slice(0, -3) + 'y';
+  if (w.endsWith('es') && w.length > 4) return w.slice(0, -2);
+  if (w.endsWith('s') && w.length > 3 && !w.endsWith('ss')) return w.slice(0, -1);
+  return w;
+}
+
 function normalize(str) {
   return (str || '')
     .toLowerCase()
     .replace(/&/g, ' and ')
     .replace(/[^a-z0-9]/g, '')
     .trim();
+}
+
+function tokenize(str) {
+  const stopWords = new Set(['and', 'of', 'for', 'in', '&', 'the', 'to', 'a', 'an']);
+  return (str || '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .map(w => stemWord(w))
+    .filter(w => w && !stopWords.has(w));
 }
 
 function isSubjectMatch(folderName, targetSubj) {
@@ -222,6 +242,27 @@ function isSubjectMatch(folderName, targetSubj) {
   const sFolder = stripAnd(folderName);
   const sTarget = stripAnd(targetSubj);
   if (sFolder && sTarget && (sFolder === sTarget || sFolder.includes(sTarget) || sTarget.includes(sFolder))) return true;
+
+  // Word token overlap with stemming (handles "Reward" vs "Rewards", "System" vs "Systems")
+  const tokensFolder = tokenize(folderName);
+  const tokensTarget = tokenize(targetSubj);
+  if (tokensFolder.length > 0 && tokensTarget.length > 0) {
+    const fStr = tokensFolder.join('');
+    const tStr = tokensTarget.join('');
+    if (fStr === tStr || fStr.includes(tStr) || tStr.includes(fStr)) return true;
+
+    // Check token intersection
+    const setFolder = new Set(tokensFolder);
+    const setTarget = new Set(tokensTarget);
+    let intersection = 0;
+    for (const t of setTarget) {
+      if (setFolder.has(t)) intersection++;
+    }
+    const minTokens = Math.min(setFolder.size, setTarget.size);
+    if (minTokens > 0 && (intersection / minTokens) >= 0.8) {
+      return true;
+    }
+  }
 
   return false;
 }
@@ -357,14 +398,12 @@ class SolmatesClient {
       }
     }
 
-    // Fallback: search all subfolders across all groups if spec wasn't specified
-    if (!specPart) {
-      for (const group of activeFolders) {
-        const subRes = await apiRequest(`/sol/folders/${cat}/${sem}?parentId=${group.id}`);
-        if (subRes && subRes.data) {
-          const match = subRes.data.find(f => isSubjectMatch(f.name, subjPart));
-          if (match) return match;
-        }
+    // Fallback: search all subfolders across all groups if not found yet
+    for (const group of activeFolders) {
+      const subRes = await apiRequest(`/sol/folders/${cat}/${sem}?parentId=${group.id}`);
+      if (subRes && subRes.data) {
+        const match = subRes.data.find(f => isSubjectMatch(f.name, subjPart));
+        if (match) return match;
       }
     }
 
