@@ -129,7 +129,7 @@ onValue(ref(db, 'queue'), (snapshot) => {
             linkHtml += `<button onclick="retryVodUpload('${item.id}')" class="mt-2 inline-flex items-center text-xs font-bold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-md transition-colors mr-2 cursor-pointer">🔄 Retry YouTube Upload</button>`;
         }
         if (item.youtube_url) {
-            linkHtml += `<a href="${item.youtube_url}" target="_blank" class="mt-2 inline-flex items-center text-xs font-bold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-md transition-colors">▶️ Watch on YouTube</a>`;
+            linkHtml += `<a href="${item.youtube_url}" target="_blank" class="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-indigo-700 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg border border-indigo-200 transition-colors">▶️ Watch on Solmates</a>`;
         }
         
         let statusText = item.status || 'WAITING';
@@ -149,8 +149,10 @@ onValue(ref(db, 'queue'), (snapshot) => {
                     <div class="flex-1 min-w-0">
                         <span class="font-bold text-sm text-gray-800 block truncate" title="${item.title}">${item.title}</span>
                     </div>
-                    <button class="delete-btn text-red-600 font-bold bg-red-50 hover:bg-red-100 px-2.5 py-1 rounded-lg text-[10px] uppercase tracking-wider border border-red-200 transition-colors shrink-0 cursor-pointer" data-id="${item.id}" title="Delete this item">
-                        ❌ Delete
+                    <button class="delete-btn text-gray-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg border border-transparent hover:border-red-200 transition-all shrink-0 cursor-pointer flex items-center justify-center" data-id="${item.id}" title="Delete class">
+                        <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
                     </button>
                 </div>
                 <div class="mb-2 flex items-center gap-2 flex-wrap">
@@ -176,8 +178,8 @@ onValue(ref(db, 'queue'), (snapshot) => {
                                 <span class="text-[10px] text-red-600">Bot is currently inside class</span>
                             </div>
                         </div>
-                        <button class="leave-btn bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-bold px-3.5 py-1.5 rounded-lg text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer shrink-0 border border-red-700" data-id="${item.id}" title="Leave class now, save video and upload to YouTube">
-                            🚪 Leave Class Now
+                        <button class="leave-btn bg-red-600 hover:bg-red-700 active:scale-95 text-white font-bold px-3 py-1.5 rounded-lg text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer shrink-0 border border-red-700" data-id="${item.id}" title="Leave Class now, save video and upload to Solmates" aria-label="Leave Class">
+                            🚪 Leave
                         </button>
                     </div>
                 ` : ''}
@@ -499,7 +501,7 @@ onValue(ref(db, 'live_queue'), (snapshot) => {
         let linkHtml = '';
         if (item.run_url) { linkHtml += `<a href="${item.run_url}" target="_blank" class="mt-2 inline-flex items-center text-xs font-bold text-gray-700 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-md transition-colors mr-2">📦 Download Backup</a>`; }
         if (item.youtube_url) {
-            linkHtml += `<a href="${item.youtube_url}" target="_blank" class="mt-2 inline-flex items-center text-xs font-bold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-md transition-colors">▶️ Watch on YouTube</a>`;
+            linkHtml += `<a href="${item.youtube_url}" target="_blank" class="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-indigo-700 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg border border-indigo-200 transition-colors">▶️ Watch on Solmates</a>`;
         }
         if ((item.status === 'FAILED' || item.error) && !item.youtube_url) {
             linkHtml += `<button onclick="retryLiveUpload('${item.id}')" class="mt-2 inline-flex items-center text-xs font-bold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-md transition-colors mr-2 cursor-pointer">🔄 Retry YouTube Upload</button>`;
@@ -534,8 +536,10 @@ onValue(ref(db, 'live_queue'), (snapshot) => {
                     <div class="flex-1 min-w-0">
                         <span class="font-bold text-sm text-gray-800 block truncate" title="${item.title}">${item.title}</span>
                     </div>
-                    <button class="live-delete-btn text-red-600 font-bold bg-red-50 hover:bg-red-100 px-2.5 py-1 rounded-lg text-[10px] uppercase tracking-wider border border-red-200 transition-colors shrink-0 cursor-pointer" data-id="${item.id}" title="Delete this item">
-                        ❌ Delete
+                    <button class="live-delete-btn text-gray-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg border border-transparent hover:border-red-200 transition-all shrink-0 cursor-pointer flex items-center justify-center" data-id="${item.id}" title="Delete class">
+                        <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
                     </button>
                 </div>
                 <div class="mb-2 flex items-center gap-2 flex-wrap">
@@ -560,8 +564,8 @@ onValue(ref(db, 'live_queue'), (snapshot) => {
                                 <span class="text-[10px] text-red-600">Bot is currently inside class</span>
                             </div>
                         </div>
-                        <button class="live-leave-btn bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-bold px-3.5 py-1.5 rounded-lg text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer shrink-0 border border-red-700" data-id="${item.id}" title="Leave class now, save video and upload to YouTube/Solmates">
-                            🚪 Leave Class Now
+                        <button class="live-leave-btn bg-red-600 hover:bg-red-700 active:scale-95 text-white font-bold px-3 py-1.5 rounded-lg text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer shrink-0 border border-red-700" data-id="${item.id}" title="Leave Class now, save video and upload to Solmates" aria-label="Leave Class">
+                            🚪 Leave
                         </button>
                     </div>
                 ` : ''}
