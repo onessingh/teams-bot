@@ -145,29 +145,49 @@ onValue(ref(db, 'queue'), (snapshot) => {
         
         const html = `
             <li class="queue-item bg-white p-4 border border-gray-100 rounded-xl shadow-sm relative group">
-                <div class="absolute top-3 right-3 flex items-center gap-1.5">
-                    ${(item.status === 'RECORDING' || item.status === 'WAITING_IN_LOBBY' || item.status === 'IN_LOBBY' || item.status === 'ADMITTED_PREPARING_UI' || item.status === 'WAITING_FOR_SCHEDULED_TIME') ? `
-                        <button class="leave-btn text-white font-bold bg-amber-600 hover:bg-amber-700 px-2.5 py-1 rounded-lg text-[10px] uppercase tracking-wider border border-amber-500 shadow-sm transition-all flex items-center gap-1 cursor-pointer" data-id="${item.id}" title="Leave class now, save video and upload to YouTube">
-                            🚪 Leave Class
-                        </button>
-                    ` : ''}
-                    <button class="delete-btn text-red-600 font-bold bg-red-50 hover:bg-red-100 px-2.5 py-1 rounded-lg text-[10px] uppercase tracking-wider border border-red-200 transition-colors" data-id="${item.id}" title="Delete this item">
+                <div class="flex items-start justify-between gap-3 mb-2">
+                    <div class="flex-1 min-w-0">
+                        <span class="font-bold text-sm text-gray-800 block truncate" title="${item.title}">${item.title}</span>
+                    </div>
+                    <button class="delete-btn text-red-600 font-bold bg-red-50 hover:bg-red-100 px-2.5 py-1 rounded-lg text-[10px] uppercase tracking-wider border border-red-200 transition-colors shrink-0 cursor-pointer" data-id="${item.id}" title="Delete this item">
                         ❌ Delete
                     </button>
                 </div>
-                <div class="flex justify-between items-start mb-1 pr-16">
-                    <span class="font-bold text-sm text-gray-800 truncate pr-2" title="${item.title}">${item.title}</span>
-                </div>
-                <div class="mb-1 flex items-center gap-2 flex-wrap">
+                <div class="mb-2 flex items-center gap-2 flex-wrap">
                     <span class="text-[11px] font-black uppercase tracking-wider ${statusColor} shrink-0" id="status-${item.id}">${statusText}</span>
                     ${(item.course === 'healthcare' || item.category === 'hc-recorded-class' || (item.title && item.title.includes('MBA-HC'))) ? '<span class="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded font-bold border border-emerald-200">🏥 MBA-HC</span>' : '<span class="text-[10px] bg-gray-50 text-gray-600 px-2 py-0.5 rounded font-medium border border-gray-200">🎓 MBA</span>'}
                     <span class="text-[10px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded font-bold border border-blue-100">👤 ${item.accountId || 'default'}</span>
                 </div>
-                <div class="text-[11px] text-gray-500 flex justify-between items-center pr-8">
+                <div class="text-[11px] text-gray-500 flex justify-between items-center">
                     <span>${item.scheduledTime ? 'Scheduled: ' + new Date(item.scheduledTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Added: ' + new Date(item.addedAt).toLocaleString()}</span>
                     ${item.maxMs ? `<span class="bg-gray-100 px-2 py-0.5 rounded text-gray-600">⏳ ${(item.maxMs/60000).toFixed(0)}m limit</span>` : ''}
                 </div>
                 <div id="elapsed-${item.id}" class="text-xs font-bold text-red-600 mt-2 empty:hidden"></div>
+
+                ${(item.status === 'RECORDING' || item.status === 'WAITING_IN_LOBBY' || item.status === 'IN_LOBBY' || item.status === 'ADMITTED_PREPARING_UI' || item.status === 'WAITING_FOR_SCHEDULED_TIME' || item.status === 'STARTING_BROWSER' || item.status === 'OPENING_RECORDING') ? `
+                    <div class="mt-3 p-2.5 bg-red-50/80 border border-red-200 rounded-xl flex items-center justify-between gap-3 shadow-xs">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <span class="relative flex h-2.5 w-2.5 shrink-0">
+                                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                            </span>
+                            <div class="flex flex-col">
+                                <span class="text-xs font-bold text-red-900 leading-tight">Meeting Active</span>
+                                <span class="text-[10px] text-red-600">Bot is currently inside class</span>
+                            </div>
+                        </div>
+                        <button class="leave-btn bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-bold px-3.5 py-1.5 rounded-lg text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer shrink-0 border border-red-700" data-id="${item.id}" title="Leave class now, save video and upload to YouTube">
+                            🚪 Leave Class Now
+                        </button>
+                    </div>
+                ` : ''}
+                ${item.status === 'LEAVING_CLASS' ? `
+                    <div class="mt-3 p-2.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2 text-amber-800 text-xs font-bold">
+                        <span class="animate-spin inline-block">⏳</span>
+                        <span>Leaving class, saving video & uploading...</span>
+                    </div>
+                ` : ''}
+
                 ${((item.status === 'RECORDING' || item.status === 'WAITING_IN_LOBBY' || item.status === 'IN_LOBBY') && item.live_frame) ? `
                 <div class="mt-3 relative">
                     <span class="absolute top-2 left-2 ${item.status === 'RECORDING' ? 'bg-red-600' : 'bg-amber-600'} text-white text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1 shadow">
@@ -510,36 +530,56 @@ onValue(ref(db, 'live_queue'), (snapshot) => {
         
         const html = `
             <li class="queue-item bg-white p-4 border border-gray-100 rounded-xl shadow-sm relative group">
-                <div class="absolute top-3 right-3 flex items-center gap-1.5">
-                    ${(item.status === 'RECORDING' || item.status === 'WAITING_IN_LOBBY' || item.status === 'IN_LOBBY' || item.status === 'ADMITTED_PREPARING_UI' || item.status === 'WAITING_FOR_SCHEDULED_TIME' || item.status === 'STARTING_BROWSER' || item.status === 'OPENING_RECORDING') ? `
-                        <button class="live-leave-btn text-white font-bold bg-amber-600 hover:bg-amber-700 px-2.5 py-1 rounded-lg text-[10px] uppercase tracking-wider border border-amber-500 shadow-sm transition-all flex items-center gap-1 cursor-pointer" data-id="${item.id}" title="Leave class now, save video and upload to YouTube">
-                            🚪 Leave Class
-                        </button>
-                    ` : ''}
-                    <button class="live-delete-btn text-red-600 font-bold bg-red-50 hover:bg-red-100 px-2.5 py-1 rounded-lg text-[10px] uppercase tracking-wider border border-red-200 transition-colors" data-id="${item.id}" title="Delete this item">
-                        Delete
+                <div class="flex items-start justify-between gap-3 mb-2">
+                    <div class="flex-1 min-w-0">
+                        <span class="font-bold text-sm text-gray-800 block truncate" title="${item.title}">${item.title}</span>
+                    </div>
+                    <button class="live-delete-btn text-red-600 font-bold bg-red-50 hover:bg-red-100 px-2.5 py-1 rounded-lg text-[10px] uppercase tracking-wider border border-red-200 transition-colors shrink-0 cursor-pointer" data-id="${item.id}" title="Delete this item">
+                        ❌ Delete
                     </button>
                 </div>
-                <div class="flex justify-between items-start mb-1 pr-16">
-                    <span class="font-bold text-sm text-gray-800 truncate pr-2" title="${item.title}">${item.title}</span>
-                </div>
-                <div class="mb-1 flex items-center gap-2 flex-wrap">
+                <div class="mb-2 flex items-center gap-2 flex-wrap">
                     <span class="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${statusColor} shrink-0">${statusText}</span>
                     ${(item.course === 'healthcare' || item.category === 'hc-recorded-class' || (item.title && item.title.includes('MBA-HC'))) ? '<span class="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded font-bold border border-emerald-200">🏥 MBA-HC</span>' : '<span class="text-[10px] bg-gray-50 text-gray-600 px-2 py-0.5 rounded font-medium border border-gray-200">🎓 MBA</span>'}
                     <span class="text-[10px] bg-red-50 text-red-700 px-2 py-0.5 rounded font-bold border border-red-100">👤 ${item.accountId || 'default'}</span>
                 </div>
-                <div class="text-[11px] text-gray-500 flex justify-between items-center pr-8">
-                      <span>${item.scheduledTime ? 'Scheduled: ' + new Date(item.scheduledTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Added: ' + new Date(item.addedAt).toLocaleString()}</span>
-                  </div>
-                  <div id="live-elapsed-${item.id}" class="text-xs font-bold text-red-600 mt-2 empty:hidden"></div>
-                  ${((item.status === 'RECORDING' || item.status === 'WAITING_IN_LOBBY' || item.status === 'IN_LOBBY') && item.live_frame) ? `
-                  <div class="mt-3 relative">
-                      <span class="absolute top-2 left-2 ${item.status === 'RECORDING' ? 'bg-red-600' : 'bg-amber-600'} text-white text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1 shadow">
-                          <span class="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span> ${item.status === 'RECORDING' ? 'LIVE PREVIEW' : 'LOBBY PREVIEW'}
-                      </span>
-                      <img src="${item.live_frame}" class="w-full rounded-lg border border-gray-200 shadow-sm object-cover aspect-video" alt="Live Preview">
-                  </div>
-                  ` : ''}
+                <div class="text-[11px] text-gray-500 flex justify-between items-center">
+                    <span>${item.scheduledTime ? 'Scheduled: ' + new Date(item.scheduledTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Added: ' + new Date(item.addedAt).toLocaleString()}</span>
+                </div>
+                <div id="live-elapsed-${item.id}" class="text-xs font-bold text-red-600 mt-2 empty:hidden"></div>
+
+                ${(item.status === 'RECORDING' || item.status === 'WAITING_IN_LOBBY' || item.status === 'IN_LOBBY' || item.status === 'ADMITTED_PREPARING_UI' || item.status === 'WAITING_FOR_SCHEDULED_TIME' || item.status === 'STARTING_BROWSER' || item.status === 'OPENING_RECORDING') ? `
+                    <div class="mt-3 p-2.5 bg-red-50/80 border border-red-200 rounded-xl flex items-center justify-between gap-3 shadow-xs">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <span class="relative flex h-2.5 w-2.5 shrink-0">
+                                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                            </span>
+                            <div class="flex flex-col">
+                                <span class="text-xs font-bold text-red-900 leading-tight">Meeting Active</span>
+                                <span class="text-[10px] text-red-600">Bot is currently inside class</span>
+                            </div>
+                        </div>
+                        <button class="live-leave-btn bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-bold px-3.5 py-1.5 rounded-lg text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer shrink-0 border border-red-700" data-id="${item.id}" title="Leave class now, save video and upload to YouTube/Solmates">
+                            🚪 Leave Class Now
+                        </button>
+                    </div>
+                ` : ''}
+                ${item.status === 'LEAVING_CLASS' ? `
+                    <div class="mt-3 p-2.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2 text-amber-800 text-xs font-bold">
+                        <span class="animate-spin inline-block">⏳</span>
+                        <span>Leaving class, saving video & uploading to YouTube/Solmates...</span>
+                    </div>
+                ` : ''}
+
+                ${((item.status === 'RECORDING' || item.status === 'WAITING_IN_LOBBY' || item.status === 'IN_LOBBY') && item.live_frame) ? `
+                <div class="mt-3 relative">
+                    <span class="absolute top-2 left-2 ${item.status === 'RECORDING' ? 'bg-red-600' : 'bg-amber-600'} text-white text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1 shadow">
+                        <span class="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span> ${item.status === 'RECORDING' ? 'LIVE PREVIEW' : 'LOBBY PREVIEW'}
+                    </span>
+                    <img src="${item.live_frame}" class="w-full rounded-lg border border-gray-200 shadow-sm object-cover aspect-video" alt="Live Preview">
+                </div>
+                ` : ''}
                 ${linkHtml}
             </li>
         `;
