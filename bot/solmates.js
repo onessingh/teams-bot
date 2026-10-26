@@ -52,6 +52,8 @@ const SUBJECT_SHORT_CODES = {
   'data analysis and decision tools': 'DADT',
   'organisational behaviour': 'OB',
   'organizational behaviour': 'OB',
+  'organisational behavior': 'OB',
+  'organizational behavior': 'OB',
 
   // Semester 2
   'management of information systems': 'MIS',
@@ -185,7 +187,13 @@ function getShortSubjectCode(rawSubject) {
   }
   clean = clean.replace(/\(Sem\s*\d+\)/gi, '').trim();
 
-  const norm = clean.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  const norm = clean.toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/our/g, 'or')
+    .replace(/z/g, 's')
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   
   if (SUBJECT_SHORT_CODES[norm]) return SUBJECT_SHORT_CODES[norm];
 
@@ -205,7 +213,10 @@ function getShortSubjectCode(rawSubject) {
 
 function stemWord(w) {
   if (!w) return '';
-  w = w.toLowerCase().replace(/[^a-z0-9]/g, '');
+  w = w.toLowerCase()
+       .replace(/our/g, 'or')
+       .replace(/z/g, 's')
+       .replace(/[^a-z0-9]/g, '');
   if (w.endsWith('ies') && w.length > 4) return w.slice(0, -3) + 'y';
   if (w.endsWith('es') && w.length > 4) return w.slice(0, -2);
   if (w.endsWith('s') && w.length > 3 && !w.endsWith('ss')) return w.slice(0, -1);
@@ -216,6 +227,8 @@ function normalize(str) {
   return (str || '')
     .toLowerCase()
     .replace(/&/g, ' and ')
+    .replace(/our/g, 'or')
+    .replace(/z/g, 's')
     .replace(/[^a-z0-9]/g, '')
     .trim();
 }
