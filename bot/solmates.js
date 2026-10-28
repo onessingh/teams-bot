@@ -302,17 +302,25 @@ function apiRequest(path, method = 'GET', body = null, token = null) {
       headers['Content-Length'] = Buffer.byteLength(payload);
     }
 
-    const req = https.request(url, { method, headers }, (res) => {
+    const req = https.request(url, { method, headers, timeout: 30000 }, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
+        let parsed;
         try {
-          const json = JSON.parse(data);
-          resolve(json);
+          parsed = JSON.parse(data);
         } catch (e) {
-          resolve(data);
+          parsed = { error: data, raw: data };
         }
+        if (typeof parsed === 'object' && parsed !== null) {
+          parsed.statusCode = res.statusCode;
+        }
+        resolve(parsed);
       });
+    });
+
+    req.on('timeout', () => {
+      req.destroy(new Error(`Solmates request timeout (${path})`));
     });
 
     req.on('error', reject);
@@ -485,13 +493,38 @@ class SolmatesClient {
       semester: String(semester)
     };
 
-    let res = await apiRequest(`/sol/${cat}/${semester}`, 'POST', payload, this.token);
-
-    // Auto-retry once if session expired or token invalid
-    if (res && res.error && /session expired|token|login again|unauthorized/i.test(res.error)) {
-      console.log('[Solmates] Session expired. Re-authenticating and retrying upload...');
-      await this.login();
+    let res = null;
+    let attempts = 0;
+    while (attempts < 3) {
+      attempts++;
       res = await apiRequest(`/sol/${cat}/${semester}`, 'POST', payload, this.token);
+      
+      const isAuthError = (r) => {
+        if (!r) return true;
+        if (r.statusCode === 401 || r.statusCode === 403) return true;
+        const errMsg = String(r.error || r.message || r.raw || '').toLowerCase();
+        return /session expired|token|login again|unauthorized|forbidden|jwt/i.test(errMsg);
+      };
+
+      if (isAuthError(res)) {
+        console.log(`[Solmates] Auth token invalid or expired (attempt ${attempts}/3). Re-authenticating...`);
+        try {
+          await this.login();
+        } catch (lErr) {
+          console.warn('[Solmates] Re-auth attempt error:', lErr.message);
+        }
+        continue;
+      }
+
+      if (res && (res.success || res._id || res.id)) {
+        break;
+      }
+
+      // If other temporary error, wait 2s and retry
+      if (attempts < 3) {
+        console.warn(`[Solmates] Upload attempt ${attempts} returned: ${JSON.stringify(res)}. Retrying in 2s...`);
+        await new Promise(r => setTimeout(r, 2000));
+      }
     }
 
     if (res && (res.success || res._id || res.id)) {
@@ -507,7 +540,7 @@ class SolmatesClient {
         data: res 
       };
     } else {
-      throw new Error(`[Solmates] Failed to add item: ${JSON.stringify(res)}`);
+      throw new Error(`[Solmates] Failed to add item after ${attempts} attempts: ${JSON.stringify(res)}`);
     }
   }
 }

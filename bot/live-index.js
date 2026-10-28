@@ -396,13 +396,14 @@ async function processItem(item) {
             customTitle: solmatesClassInfo ? solmatesClassInfo.solmatesTitle : null,
             category: solmatesCategory
           });
-          await ref.update({ solmates_published: true, solmates_title: solRes.title });
+          await ref.update({ solmates_published: true, solmates_title: solRes.title, solmates_error: null });
           console.log(`🎉 [Solmates] Successfully published to solmates.in (${solmatesCategory}): "${solRes.title}"`);
         } else {
           console.log('[Solmates] Credentials not found in env or Firebase. Skipping solmates publish.');
         }
       } catch (solErr) {
         console.error('[Solmates] Failed to publish to solmates.in:', solErr.message);
+        await ref.update({ solmates_published: false, solmates_error: solErr.message });
       }
     }
 
