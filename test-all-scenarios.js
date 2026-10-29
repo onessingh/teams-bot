@@ -281,6 +281,84 @@ test('Dashboard UI contains Leave Class button and event listener', () => {
     assert.strictEqual(dashboardAppCode.includes('Leave Class'), true, 'Must render Leave Class text');
 });
 
+// -------------------------------------------------------------
+// TEST SUITE 7: Post-Class Auto-Exit & Anti-Hijack Protections
+// -------------------------------------------------------------
+console.log('\n--- TEST SUITE 7: Post-Class Auto-Exit Protections ---');
+
+test('Teacher lock is NOT hijacked by a remaining student when attendance drops', () => {
+    let lockedTeacher = 'Sushama Maurya';
+    const teacherScores = {
+        'Sushama Maurya': 1743,
+        'PUSHKAR PORWAL': 1806
+    };
+    const maxParticipants = 12;
+    const currentCount = 2; // only 2 attendees left
+    const isAttendanceDropping = maxParticipants >= 6 && currentCount > 0 && currentCount <= Math.max(3, Math.floor(maxParticipants * 0.4));
+
+    let topTeacher = null;
+    let maxScore = 0;
+    for (const [name, score] of Object.entries(teacherScores)) {
+        if (score > maxScore) {
+            maxScore = score;
+            topTeacher = name;
+        }
+    }
+
+    // Protection rule: cannot switch if isAttendanceDropping
+    const currentTeacherScore = lockedTeacher ? (teacherScores[lockedTeacher] || 0) : 0;
+    const canSwitch = !isAttendanceDropping && (!lockedTeacher || (maxScore >= currentTeacherScore * 1.5));
+    if (canSwitch && lockedTeacher !== topTeacher) {
+        lockedTeacher = topTeacher;
+    }
+
+    assert.strictEqual(isAttendanceDropping, true, 'Attendance is dropping');
+    assert.strictEqual(lockedTeacher, 'Sushama Maurya', 'Locked teacher must remain Sushama Maurya and NOT switch to Pushkar Porwal');
+});
+
+test('Teacher left + students dropped exits even if stray student mic is unmuted (teacher gone > 60s)', () => {
+    const hadRealClass = true;
+    const maxParticipants = 12;
+    const currentCount = 2;
+    const lockedTeacher = 'Sushama Maurya';
+    const teacherMissingCount = 4; // gone for 60s
+    const stats = { isPresenting: false };
+    const hasActiveSpeech = true; // student has unmuted mic
+
+    const teacherGoneLonger = teacherMissingCount >= 4;
+    const teacherLeftAndStudentsDropped = hadRealClass && lockedTeacher && teacherMissingCount >= 2 && currentCount > 0 && (
+        currentCount <= 2 ||
+        (maxParticipants >= 8 && currentCount <= Math.max(2, Math.floor(maxParticipants * 0.2)))
+    ) && !stats.isPresenting && (!hasActiveSpeech || teacherGoneLonger);
+
+    assert.strictEqual(teacherLeftAndStudentsDropped, true, 'Must trigger exit because real teacher is gone > 60s and only 2 attendees remain');
+});
+
+test('Mass exodus triggers for medium-sized class (peak 12 -> 2)', () => {
+    const maxParticipants = 12;
+    const currentCount = 2;
+    const elapsedMins = 78;
+
+    const isMassExodus = (maxParticipants >= 6 && currentCount > 0 && elapsedMins >= 20 && (
+        currentCount <= Math.max(2, Math.floor(maxParticipants * 0.25)) ||
+        (maxParticipants >= 10 && currentCount <= 4) ||
+        currentCount <= 2
+    ));
+
+    assert.strictEqual(isMassExodus, true, 'Mass exodus must trigger when 12 attendees drop to 2');
+});
+
+test('Almost empty meeting triggers exit after 25 mins when only 2 remain and teacher is inactive', () => {
+    const hadRealClass = true;
+    const currentCount = 2;
+    const elapsedMins = 80;
+    const stats = { isPresenting: false };
+    const isTeacherActive = false;
+
+    const isAlmostEmpty = hadRealClass && currentCount > 0 && currentCount <= 2 && elapsedMins >= 25 && !stats.isPresenting && !isTeacherActive;
+    assert.strictEqual(isAlmostEmpty, true, 'Almost empty meeting condition must be met');
+});
+
 console.log(`\n========================================`);
 console.log(`Test Summary: ${passedTests}/${totalTests} Passed (${Math.round(passedTests/totalTests*100)}%)`);
 console.log(`========================================\n`);

@@ -1573,8 +1573,11 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
 
           // 1. Check Screen Share Presenter
           const screenShareStage = document.querySelector('[data-tid="screen-share"], [data-tid="presentation-stage"], [data-tid*="sharing"], [class*="screen-share"], [data-tid="screen-sharing-canvas"]');
-          if (screenShareStage || document.querySelector('video')) {
-            isSharing = true;
+          if (screenShareStage) {
+            const rect = screenShareStage.getBoundingClientRect ? screenShareStage.getBoundingClientRect() : { width: 0, height: 0 };
+            if (rect.width > 100 && rect.height > 100) {
+              isSharing = true;
+            }
           }
 
           // Check aria-labels and leaf text nodes for "X is presenting" / "X is sharing screen"
@@ -1597,6 +1600,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
           }
 
           // 2. Check Video Gallery / Participant Tiles & Avatars (Teams Fluent UI v9 & standard)
+          let someoneSpeaking = false;
           const participantEls = document.querySelectorAll(
             '[data-tid*="participant"], [data-cid*="participant"], [data-tid*="stream"], ' +
             '[data-tid*="avatar"], [data-cid*="avatar"], [data-tid*="tile"], [data-cid*="tile"], ' +
@@ -1620,19 +1624,23 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
 
             const name = cleanName(rawLabel);
             if (name) {
-              let pts = 1;
+              let pts = 0;
               const html = (el.outerHTML || '').toLowerCase();
               const aria = rawLabel.toLowerCase();
 
               // Active speaker detection (+3 pts)
-              if (aria.includes('speaking') || aria.includes('unmute') || html.includes('speaking') || !!el.querySelector('[class*="speaking"], [data-tid*="speaking"]')) {
+              const isSpeaking = aria.includes('speaking') || (aria.includes('unmute') && !aria.includes('muted')) || html.includes('speaking') || !!el.querySelector('[class*="speaking"], [data-tid*="speaking"]');
+              if (isSpeaking) {
                 pts += 3;
+                someoneSpeaking = true;
               }
               // Active camera (+2 pts)
               if (el.querySelector('video') || html.includes('video') || aria.includes('camera on')) {
                 pts += 2;
               }
-              signals[name] = (signals[name] || 0) + pts;
+              if (pts > 0) {
+                signals[name] = (signals[name] || 0) + pts;
+              }
             }
           });
 
@@ -1642,14 +1650,16 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             const name = cleanName(sp.textContent || '');
             if (name) {
               signals[name] = (signals[name] || 0) + 4; // Active talking in captions = +4 pts
+              someoneSpeaking = true;
             }
           });
 
-          return { signals, isSharing };
+          return { signals, isSharing, someoneSpeaking };
         });
 
         signals = participantData.signals || {};
         isSharing = participantData.isSharing;
+        const someoneSpeaking = participantData.someoneSpeaking || false;
 
         // Accumulate scores continuously across the class
         for (const [name, score] of Object.entries(signals)) {
@@ -1662,9 +1672,12 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         }
 
         // Lock / Update Teacher: User requested scoring window of at least 1:30 hours (90 mins)
-        // because teachers sometimes join late (e.g. 1 hour late)
+        // because teachers sometimes join late (e.g. 1 hour late).
+        // CRITICAL PROTECTION: DO NOT switch lockedTeacher if class is emptying out (attendance dropping)
         const currentMinsElapsed = (Date.now() - startTime) / (60 * 1000);
-        if (currentMinsElapsed <= 90 || !lockedTeacher) {
+        const isAttendanceDropping = maxParticipants >= 6 && currentCount > 0 && currentCount <= Math.max(3, Math.floor(maxParticipants * 0.4));
+
+        if (!isAttendanceDropping && (currentMinsElapsed <= 90 || !lockedTeacher)) {
           let topTeacher = null;
           let maxScore = 0;
           for (const [name, score] of Object.entries(teacherScores)) {
@@ -1675,7 +1688,10 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
           }
 
           if (topTeacher && maxScore >= 15) {
-            if (lockedTeacher !== topTeacher) {
+            const currentTeacherScore = lockedTeacher ? (teacherScores[lockedTeacher] || 0) : 0;
+            // Only switch locked teacher if none exists, or new topTeacher has at least 1.5x score and class is not emptying
+            const canSwitch = !lockedTeacher || (maxScore >= currentTeacherScore * 1.5);
+            if (canSwitch && lockedTeacher !== topTeacher) {
               lockedTeacher = topTeacher;
               console.log(`🎓 Locked Teacher Identified: "${lockedTeacher}" (Cumulative Score: ${maxScore})`);
             }
@@ -1832,7 +1848,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             if (recentCounts.length > 8) recentCounts.shift();
         }
 
-        const hasActiveSpeech = Object.keys(signals).length > 0;
+        const hasActiveSpeech = someoneSpeaking || Object.values(signals).some(pts => pts >= 3);
         const isPresentingOrVideo = isSharing || stats.isPresenting || stats.hasActiveVideo;
         const isTeacherActive = !!(lockedTeacher && (
             signals[lockedTeacher] ||
@@ -1894,13 +1910,15 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             aloneCount = 0;
         }
 
-        // 4. Teacher Left + Students Dropping Rule (30s Exit after Teacher + Students Departure):
+        // 4. Teacher Left + Students Dropping Rule (30s - 60s Exit after Teacher + Students Departure):
         // If teacher is missing for >= 30s (>= 2 checks) AND students also drop to <= 2 (or <= 20% of peak):
         // Meaning teacher ended class and students are clearing out!
+        // If teacher is missing for >= 60s (>= 4 checks) and <= 2 attendees remain, exit even if a student mic is open.
+        const teacherGoneLonger = teacherMissingCount >= 4;
         const teacherLeftAndStudentsDropped = hadRealClass && lockedTeacher && teacherMissingCount >= 2 && currentCount > 0 && (
             currentCount <= 2 ||
             (maxParticipants >= 8 && currentCount <= Math.max(2, Math.floor(maxParticipants * 0.2)))
-        ) && !isPresentingOrVideo && !hasActiveSpeech;
+        ) && !stats.isPresenting && (!hasActiveSpeech || teacherGoneLonger);
 
         if (teacherLeftAndStudentsDropped) {
             teacherLeftDropCount++;
@@ -1913,26 +1931,27 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             teacherLeftDropCount = 0;
         }
 
-        // 5. Almost empty meeting (<= 2 participants left when class was large, e.g. peak >= 20)
-        // STRICT: Only after 30 minutes and no active presentation/speech!
-        if (maxParticipants >= 20 && currentCount > 0 && currentCount <= 2 && elapsedMins >= 30 && !isPresentingOrVideo && !hasActiveSpeech) {
+        // 5. Almost empty meeting (<= 2 participants left when class ran for at least 25 minutes)
+        // STRICT: Only after 25 minutes, no screen presentation, and teacher is NOT active!
+        if (hadRealClass && currentCount > 0 && currentCount <= 2 && elapsedMins >= 25 && !stats.isPresenting && !isTeacherActive) {
             smallMeetingDropCount++;
-            console.log(`[DEBUG] Almost empty meeting: only ${currentCount} participants left (Peak: ${maxParticipants}) (${smallMeetingDropCount}/12 checks - 3 mins)...`);
-            if (smallMeetingDropCount >= 12) {
-                console.log(`🎓 Meeting almost empty (only ${currentCount} participants left for >3 minutes after ${elapsedMins.toFixed(1)}m). Stopping recording.`);
+            console.log(`[DEBUG] Almost empty meeting: only ${currentCount} participants left (Peak: ${maxParticipants}) (${smallMeetingDropCount}/8 checks - 2 mins)...`);
+            if (smallMeetingDropCount >= 8) {
+                console.log(`🎓 Meeting almost empty (only ${currentCount} participants left for >2 minutes after ${elapsedMins.toFixed(1)}m). Stopping recording.`);
                 meetingEnded = true;
             }
-        } else if (currentCount > 2 || isPresentingOrVideo || hasActiveSpeech) {
+        } else if (currentCount > 2 || stats.isPresenting || isTeacherActive) {
             smallMeetingDropCount = 0;
         }
 
-        // 5. USER REQUESTED 5-MINUTE MASS EXODUS RULE:
+        // 6. USER REQUESTED 5-MINUTE MASS EXODUS RULE:
         // "achank se bahot sare log left ho jaaye to 5 min baad recording band kar dena"
-        // If peak attendance was >= 15, and count drops to <= 25% of peak OR <= 5 participants:
+        // If peak attendance was >= 6, and count drops to <= 25% of peak OR <= 4 participants:
         // (CRITICAL: currentCount MUST BE > 0 and class ran for at least 20 minutes!)
-        const isMassExodus = (maxParticipants >= 15 && currentCount > 0 && elapsedMins >= 20 && (
-            currentCount <= Math.max(3, Math.floor(maxParticipants * 0.25)) ||
-            currentCount <= 5
+        const isMassExodus = (maxParticipants >= 6 && currentCount > 0 && elapsedMins >= 20 && (
+            currentCount <= Math.max(2, Math.floor(maxParticipants * 0.25)) ||
+            (maxParticipants >= 10 && currentCount <= 4) ||
+            currentCount <= 2
         ));
 
         if (isMassExodus) {
@@ -1943,7 +1962,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                 console.log(`🎓 Class finished! Mass exodus confirmed: Participants dropped from peak ${maxParticipants} to ${currentCount} and stayed low for >5 minutes. Stopping recording!`);
                 meetingEnded = true;
             }
-        } else if (currentCount > 5) {
+        } else if (currentCount > 4) {
             exodusCount = 0;
         }
 
