@@ -1550,6 +1550,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
 
       let signals = {};
       let isSharing = false;
+      let someoneSpeaking = false;
 
       // Teacher Scoring & Smart Departure Detection
       try {
@@ -1560,6 +1561,8 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
           function cleanName(raw) {
             if (!raw) return '';
             let s = raw.replace(/\s*\([^)]*\)/g, ' ')
+                       .replace(/,\s*context\s*menu(?:[\s\w]*)/gi, ' ')
+                       .replace(/\s+is\s+(?:on|off)\b/gi, ' ')
                        .replace(/,\s*(?:mic\s*(?:muted|unmuted)|camera\s*(?:on|off)|speaking|presented|video)/gi, ' ')
                        .replace(/\s*(?:is\s*presenting|has\s*started\s*sharing|is\s*sharing\s*screen|'s\s*screen)/gi, ' ')
                        .replace(/\s+/g, ' ')
@@ -1659,7 +1662,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
 
         signals = participantData.signals || {};
         isSharing = participantData.isSharing;
-        const someoneSpeaking = participantData.someoneSpeaking || false;
+        someoneSpeaking = participantData.someoneSpeaking || false;
 
         // Accumulate scores continuously across the class
         for (const [name, score] of Object.entries(signals)) {
@@ -1670,38 +1673,9 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
           const topList = Object.entries(teacherScores).sort((a,b)=>b[1]-a[1]).slice(0, 3).map(([n,s])=>`${n}: ${s}pts`).join(', ');
           console.log(`[DEBUG] 🎓 Top speaker scores: ${topList}`);
         }
-
-        // Lock / Update Teacher: User requested scoring window of at least 1:30 hours (90 mins)
-        // because teachers sometimes join late (e.g. 1 hour late).
-        // CRITICAL PROTECTION: DO NOT switch lockedTeacher if class is emptying out (attendance dropping)
-        const currentMinsElapsed = (Date.now() - startTime) / (60 * 1000);
-        const isAttendanceDropping = maxParticipants >= 6 && currentCount > 0 && currentCount <= Math.max(3, Math.floor(maxParticipants * 0.4));
-
-        if (!isAttendanceDropping && (currentMinsElapsed <= 90 || !lockedTeacher)) {
-          let topTeacher = null;
-          let maxScore = 0;
-          for (const [name, score] of Object.entries(teacherScores)) {
-            if (score > maxScore) {
-              maxScore = score;
-              topTeacher = name;
-            }
-          }
-
-          if (topTeacher && maxScore >= 15) {
-            const currentTeacherScore = lockedTeacher ? (teacherScores[lockedTeacher] || 0) : 0;
-            // Only switch locked teacher if none exists, or new topTeacher has at least 1.5x score and class is not emptying
-            const canSwitch = !lockedTeacher || (maxScore >= currentTeacherScore * 1.5);
-            if (canSwitch && lockedTeacher !== topTeacher) {
-              lockedTeacher = topTeacher;
-              console.log(`🎓 Locked Teacher Identified: "${lockedTeacher}" (Cumulative Score: ${maxScore})`);
-            }
-
-            if (signals[lockedTeacher] && loopCount % 8 === 0) {
-              console.log(`[DEBUG] 👨‍🏫 Active teacher: "${lockedTeacher}"`);
-            }
-          }
-        }
-      } catch(te) {}
+      } catch(te) {
+        console.log(`[DEBUG] Error in teacher scoring loop: ${te}`);
+      }
       
       // End meeting detection
       try {
@@ -1817,6 +1791,36 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
 
         if (currentCount > maxParticipants) {
             maxParticipants = currentCount;
+        }
+
+        // Lock / Update Teacher: User requested scoring window of at least 1:30 hours (90 mins)
+        // because teachers sometimes join late (e.g. 1 hour late).
+        // CRITICAL PROTECTION: DO NOT switch lockedTeacher if class is emptying out (attendance dropping)
+        const isAttendanceDropping = maxParticipants >= 6 && currentCount > 0 && currentCount <= Math.max(3, Math.floor(maxParticipants * 0.4));
+
+        if (!isAttendanceDropping && (elapsedMins <= 90 || !lockedTeacher)) {
+          let topTeacher = null;
+          let maxScore = 0;
+          for (const [name, score] of Object.entries(teacherScores)) {
+            if (score > maxScore) {
+              maxScore = score;
+              topTeacher = name;
+            }
+          }
+
+          if (topTeacher && maxScore >= 15) {
+            const currentTeacherScore = lockedTeacher ? (teacherScores[lockedTeacher] || 0) : 0;
+            // Only switch locked teacher if none exists, or new topTeacher has at least 1.5x score and class is not emptying
+            const canSwitch = !lockedTeacher || (maxScore >= currentTeacherScore * 1.5);
+            if (canSwitch && lockedTeacher !== topTeacher) {
+              lockedTeacher = topTeacher;
+              console.log(`🎓 Locked Teacher Identified: "${lockedTeacher}" (Cumulative Score: ${maxScore})`);
+            }
+
+            if (signals[lockedTeacher] && loopCount % 8 === 0) {
+              console.log(`[DEBUG] 👨‍🏫 Active teacher: "${lockedTeacher}"`);
+            }
+          }
         }
 
         if (loopCount % 4 === 0) {

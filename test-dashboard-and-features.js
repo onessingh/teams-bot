@@ -210,19 +210,19 @@ async function runAll() {
   // -------------------------------------------------------------
   console.log('\n--- TEST SUITE 2: Live Recorder Signals & Scoping ---');
 
-  it('Signals and isSharing are scoped before try blocks in loop', () => {
+  it('Signals, isSharing, and someoneSpeaking are scoped before try blocks in loop', () => {
     const liveRecorderCode = fs.readFileSync(path.join(__dirname, 'bot', 'live-recorder.js'), 'utf8');
 
-    // Verify signals is declared with let before participantData try block
-    const declMatch = /let signals = \{\};\s*let isSharing = false;[\s\S]*?try\s*\{[\s\S]*?participantData = await page\.evaluate/.test(liveRecorderCode);
-    assert.strictEqual(declMatch, true, 'signals and isSharing must be declared with let outside try blocks');
+    // Verify signals, isSharing, and someoneSpeaking are declared with let before participantData try block
+    const declMatch = /let signals = \{\};\s*let isSharing = false;\s*let someoneSpeaking = false;[\s\S]*?try\s*\{[\s\S]*?participantData = await page\.evaluate/.test(liveRecorderCode);
+    assert.strictEqual(declMatch, true, 'signals, isSharing, and someoneSpeaking must be declared with let outside try blocks');
 
-    // Verify signals is not re-declared with const in try block
-    const redeclMatch = /const signals = participantData\.signals/.test(liveRecorderCode);
-    assert.strictEqual(redeclMatch, false, 'signals must NOT be declared as const inside try block');
+    // Verify signals or someoneSpeaking are not re-declared with const in try block
+    const redeclMatch = /const (?:signals|someoneSpeaking) = participantData\./.test(liveRecorderCode);
+    assert.strictEqual(redeclMatch, false, 'signals and someoneSpeaking must NOT be declared as const inside try block');
   });
 
-  it('Evaluation loop does not throw ReferenceError when signals is accessed', () => {
+  it('Evaluation loop does not throw ReferenceError when signals or someoneSpeaking is accessed', () => {
     // Simulate loop body logic
     let loopCount = 1;
     let lockedTeacher = 'Dr. S. K. Sharma';
@@ -230,19 +230,21 @@ async function runAll() {
 
     let signals = {};
     let isSharing = false;
+    let someoneSpeaking = false;
 
     // Simulate first block evaluation
     try {
-      const participantData = { signals: { 'Dr. S. K. Sharma': 8 }, isSharing: true };
+      const participantData = { signals: { 'Dr. S. K. Sharma': 8 }, isSharing: true, someoneSpeaking: true };
       signals = participantData.signals || {};
       isSharing = participantData.isSharing;
+      someoneSpeaking = participantData.someoneSpeaking || false;
     } catch (e) {}
 
     // Simulate second block evaluation
     let hasActiveSpeech = false;
     let isPresentingOrVideo = false;
     try {
-      hasActiveSpeech = Object.keys(signals).length > 0;
+      hasActiveSpeech = someoneSpeaking || Object.values(signals).some(pts => pts >= 3);
       isPresentingOrVideo = isSharing;
     } catch (err) {
       assert.fail(`Scoping failure: ${err.message}`);
@@ -250,6 +252,12 @@ async function runAll() {
 
     assert.strictEqual(hasActiveSpeech, true);
     assert.strictEqual(isPresentingOrVideo, true);
+  });
+
+  it('cleanName filters Teams Fluent UI artifacts like "is on, Context menu is available"', () => {
+    const liveRecorderCode = fs.readFileSync(path.join(__dirname, 'bot', 'live-recorder.js'), 'utf8');
+    assert.strictEqual(liveRecorderCode.includes('context\\s*menu'), true, 'Must strip context menu text');
+    assert.strictEqual(liveRecorderCode.includes('is\\s+(?:on|off)'), true, 'Must strip is on / is off text');
   });
 
   // -------------------------------------------------------------
