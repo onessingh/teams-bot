@@ -336,6 +336,72 @@ async function runAll() {
     assert.strictEqual(stemWord('business'), 'business'); // 'ss' preserved
   });
 
+  console.log(`\n--- TEST SUITE 4: Solmates Website Upload Status & Retry Handling ---`);
+
+  // Extract getSolmatesStatus from app.js
+  const appJsContent = fs.readFileSync(path.join(__dirname, 'dashboard', 'app.js'), 'utf8');
+  const getSolmatesStatusMatch = appJsContent.match(/function getSolmatesStatus\(item\) \{([\s\S]*?)\n\}/);
+  assert(getSolmatesStatusMatch, 'getSolmatesStatus function must exist in app.js');
+  const getSolmatesStatus = new Function('item', getSolmatesStatusMatch[1]);
+
+  it('Completed class with successful Solmates upload shows isSuccess=true, isFailed=false', () => {
+    const item = {
+      id: 'c1',
+      status: 'COMPLETED',
+      youtube_url: 'https://youtu.be/test1',
+      solmates_published: true,
+      solmates_title: 'OB Class #5 (01/11/2026)'
+    };
+    const res = getSolmatesStatus(item);
+    assert.strictEqual(res.isSuccess, true);
+    assert.strictEqual(res.isFailed, false);
+    assert.strictEqual(res.title, 'OB Class #5 (01/11/2026)');
+    assert.strictEqual(res.error, null);
+  });
+
+  it('Completed class with failed Solmates upload shows isFailed=true, status stays COMPLETED', () => {
+    const item = {
+      id: 'c2',
+      status: 'COMPLETED',
+      youtube_url: 'https://youtu.be/test2',
+      solmates_published: false,
+      solmates_error: 'Course not found on website'
+    };
+    const res = getSolmatesStatus(item);
+    assert.strictEqual(res.isSuccess, false);
+    assert.strictEqual(res.isFailed, true);
+    assert.strictEqual(res.error, 'Course not found on website');
+    assert.strictEqual(item.status, 'COMPLETED'); // Status remains COMPLETED on dashboard
+  });
+
+  it('In-progress class (WAITING/RECORDING) does NOT flag Solmates error prematurely', () => {
+    const waitingItem = { id: 'c3', status: 'WAITING' };
+    const recordingItem = { id: 'c4', status: 'RECORDING' };
+    assert.strictEqual(getSolmatesStatus(waitingItem).isFailed, false);
+    assert.strictEqual(getSolmatesStatus(recordingItem).isFailed, false);
+  });
+
+  it('Dashboard app.js contains Retry Solmates Upload button and window.retrySolmates', () => {
+    assert(appJsContent.includes('🔄 Retry Solmates Upload'), 'app.js must render Retry Solmates Upload button');
+    assert(appJsContent.includes('⚠️ Solmates: Not Uploaded'), 'app.js must display Solmates: Not Uploaded badge');
+    assert(appJsContent.includes('🌐 Solmates: Uploaded'), 'app.js must display Solmates: Uploaded badge on success');
+    assert(appJsContent.includes('window.retrySolmates = async function'), 'window.retrySolmates handler must be defined');
+  });
+
+  it('bot/index.js and bot/live-index.js support fast-path Solmates retry and explicit error updates', () => {
+    const liveIndexContent = fs.readFileSync(path.join(__dirname, 'bot', 'live-index.js'), 'utf8');
+    const indexContent = fs.readFileSync(path.join(__dirname, 'bot', 'index.js'), 'utf8');
+
+    // Both bots must have fast path
+    assert(liveIndexContent.includes('[Fast Path Solmates Retry]'), 'live-index.js must support fast-path Solmates retry');
+    assert(indexContent.includes('[Fast Path Solmates Retry]'), 'index.js must support fast-path Solmates retry');
+
+    // Both bots must set solmates_published: false and error message on failure
+    assert(liveIndexContent.includes("solmates_published: false, solmates_error:"), 'live-index.js must persist solmates_error');
+    assert(indexContent.includes("solmates_published: false"), 'index.js must persist solmates_published: false');
+    assert(indexContent.includes("solmates_error:"), 'index.js must persist solmates_error');
+  });
+
   console.log(`\n========================================`);
   console.log(`E2E Verification Summary: ${passed}/${total} Passed (${Math.round(passed/total*100)}%)`);
   console.log(`========================================\n`);

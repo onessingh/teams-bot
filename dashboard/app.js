@@ -110,6 +110,36 @@ function getStatusColor(status) {
     return 'text-blue-600';
 }
 
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+// Helper for Solmates publishing status
+function getSolmatesStatus(item) {
+    if (item.solmates_published === true) {
+        return { isSuccess: true, isFailed: false, error: null, title: item.solmates_title || null };
+    }
+    // Only flag as not uploaded when class has finished recording / uploaded to YouTube or marked COMPLETED
+    if (item.status === 'COMPLETED' || item.youtube_url) {
+        const isFailed = item.solmates_published === false || !!item.solmates_error || (!item.solmates_published && item.status === 'COMPLETED');
+        if (isFailed) {
+            return {
+                isSuccess: false,
+                isFailed: true,
+                error: item.solmates_error || 'Not uploaded to Solmates website',
+                title: null
+            };
+        }
+    }
+    return { isSuccess: false, isFailed: false, error: null, title: null };
+}
+
 // Listen to Queue
 let queueItemsData = [];
 onValue(ref(db, 'queue'), (snapshot) => {
@@ -130,6 +160,32 @@ onValue(ref(db, 'queue'), (snapshot) => {
         }
         if (item.youtube_url) {
             linkHtml += `<a href="${item.youtube_url}" target="_blank" class="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-indigo-700 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg border border-indigo-200 transition-colors">▶️ Watch on Solmates</a>`;
+        }
+        
+        const solmatesState = getSolmatesStatus(item);
+        if (solmatesState.isFailed && item.youtube_url) {
+            linkHtml += `<button onclick="retrySolmates('${item.id}', 'queue')" class="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-amber-800 hover:text-amber-900 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-lg border border-amber-300 transition-colors mr-2 cursor-pointer shadow-xs">🔄 Retry Solmates Upload</button>`;
+        }
+
+        let solmatesBadgeHtml = '';
+        let solmatesAlertHtml = '';
+        if (solmatesState.isFailed) {
+            solmatesBadgeHtml = `<span class="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1 shrink-0" title="${escapeHtml(solmatesState.error)}">⚠️ Solmates: Not Uploaded</span>`;
+            solmatesAlertHtml = `
+                <div class="mt-2.5 p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-xs flex items-start gap-2 shadow-xs">
+                    <span class="text-amber-600 text-base leading-none shrink-0 mt-0.5">⚠️</span>
+                    <div class="flex-1 min-w-0">
+                        <div class="font-bold flex items-center justify-between">
+                            <span>Solmates Website: Not Uploaded</span>
+                        </div>
+                        <div class="text-[11px] text-amber-800 mt-0.5 break-words">
+                            ${solmatesState.error ? `Error: ${escapeHtml(solmatesState.error)}` : 'Video uploaded to YouTube, but could not be added to Solmates website.'}
+                        </div>
+                    </div>
+                </div>
+            `;
+        } else if (solmatesState.isSuccess) {
+            solmatesBadgeHtml = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1 shrink-0" title="${escapeHtml(solmatesState.title || 'Uploaded to Solmates')}">🌐 Solmates: Uploaded</span>`;
         }
         
         let statusText = item.status || 'WAITING';
@@ -157,6 +213,7 @@ onValue(ref(db, 'queue'), (snapshot) => {
                 </div>
                 <div class="mb-2 flex items-center gap-2 flex-wrap">
                     <span class="text-[11px] font-black uppercase tracking-wider ${statusColor} shrink-0" id="status-${item.id}">${statusText}</span>
+                    ${solmatesBadgeHtml}
                     ${(item.course === 'healthcare' || item.category === 'hc-recorded-class' || (item.title && item.title.includes('MBA-HC'))) ? '<span class="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded font-bold border border-emerald-200">🏥 MBA-HC</span>' : '<span class="text-[10px] bg-gray-50 text-gray-600 px-2 py-0.5 rounded font-medium border border-gray-200">🎓 MBA</span>'}
                     <span class="text-[10px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded font-bold border border-blue-100">👤 ${item.accountId || 'default'}</span>
                 </div>
@@ -165,6 +222,7 @@ onValue(ref(db, 'queue'), (snapshot) => {
                     ${item.maxMs ? `<span class="bg-gray-100 px-2 py-0.5 rounded text-gray-600">⏳ ${(item.maxMs/60000).toFixed(0)}m limit</span>` : ''}
                 </div>
                 <div id="elapsed-${item.id}" class="text-xs font-bold text-red-600 mt-2 empty:hidden"></div>
+                ${solmatesAlertHtml}
 
                 ${(item.status === 'RECORDING' || item.status === 'WAITING_IN_LOBBY' || item.status === 'IN_LOBBY' || item.status === 'ADMITTED_PREPARING_UI' || item.status === 'WAITING_FOR_SCHEDULED_TIME' || item.status === 'STARTING_BROWSER' || item.status === 'OPENING_RECORDING') ? `
                     <div class="mt-3 p-2.5 bg-red-50/80 border border-red-200 rounded-xl flex items-center justify-between gap-3 shadow-xs">
@@ -507,6 +565,32 @@ onValue(ref(db, 'live_queue'), (snapshot) => {
             linkHtml += `<button onclick="retryLiveUpload('${item.id}')" class="mt-2 inline-flex items-center text-xs font-bold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-md transition-colors mr-2 cursor-pointer">🔄 Retry YouTube Upload</button>`;
         }
         
+        const solmatesState = getSolmatesStatus(item);
+        if (solmatesState.isFailed && item.youtube_url) {
+            linkHtml += `<button onclick="retrySolmates('${item.id}', 'live_queue')" class="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-amber-800 hover:text-amber-900 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-lg border border-amber-300 transition-colors mr-2 cursor-pointer shadow-xs">🔄 Retry Solmates Upload</button>`;
+        }
+
+        let solmatesBadgeHtml = '';
+        let solmatesAlertHtml = '';
+        if (solmatesState.isFailed) {
+            solmatesBadgeHtml = `<span class="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1 shrink-0" title="${escapeHtml(solmatesState.error)}">⚠️ Solmates: Not Uploaded</span>`;
+            solmatesAlertHtml = `
+                <div class="mt-2.5 p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-xs flex items-start gap-2 shadow-xs">
+                    <span class="text-amber-600 text-base leading-none shrink-0 mt-0.5">⚠️</span>
+                    <div class="flex-1 min-w-0">
+                        <div class="font-bold flex items-center justify-between">
+                            <span>Solmates Website: Not Uploaded</span>
+                        </div>
+                        <div class="text-[11px] text-amber-800 mt-0.5 break-words">
+                            ${solmatesState.error ? `Error: ${escapeHtml(solmatesState.error)}` : 'YouTube upload succeeded, but class could not be added to Solmates website.'}
+                        </div>
+                    </div>
+                </div>
+            `;
+        } else if (solmatesState.isSuccess) {
+            solmatesBadgeHtml = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1 shrink-0" title="${escapeHtml(solmatesState.title || 'Uploaded to Solmates')}">🌐 Solmates: Uploaded</span>`;
+        }
+        
         let statusText = item.status || 'WAITING';
         if (item.error) {
             linkHtml += `<div class="mt-2 text-[10px] text-red-500 font-medium bg-red-50 p-2 rounded border border-red-100">${item.error}</div>`;
@@ -544,6 +628,7 @@ onValue(ref(db, 'live_queue'), (snapshot) => {
                 </div>
                 <div class="mb-2 flex items-center gap-2 flex-wrap">
                     <span class="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${statusColor} shrink-0">${statusText}</span>
+                    ${solmatesBadgeHtml}
                     ${(item.course === 'healthcare' || item.category === 'hc-recorded-class' || (item.title && item.title.includes('MBA-HC'))) ? '<span class="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded font-bold border border-emerald-200">🏥 MBA-HC</span>' : '<span class="text-[10px] bg-gray-50 text-gray-600 px-2 py-0.5 rounded font-medium border border-gray-200">🎓 MBA</span>'}
                     <span class="text-[10px] bg-red-50 text-red-700 px-2 py-0.5 rounded font-bold border border-red-100">👤 ${item.accountId || 'default'}</span>
                 </div>
@@ -551,6 +636,7 @@ onValue(ref(db, 'live_queue'), (snapshot) => {
                     <span>${item.scheduledTime ? 'Scheduled: ' + new Date(item.scheduledTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Added: ' + new Date(item.addedAt).toLocaleString()}</span>
                 </div>
                 <div id="live-elapsed-${item.id}" class="text-xs font-bold text-red-600 mt-2 empty:hidden"></div>
+                ${solmatesAlertHtml}
 
                 ${(item.status === 'RECORDING' || item.status === 'WAITING_IN_LOBBY' || item.status === 'IN_LOBBY' || item.status === 'ADMITTED_PREPARING_UI' || item.status === 'WAITING_FOR_SCHEDULED_TIME' || item.status === 'STARTING_BROWSER' || item.status === 'OPENING_RECORDING') ? `
                     <div class="mt-3 p-2.5 bg-red-50/80 border border-red-200 rounded-xl flex items-center justify-between gap-3 shadow-xs">
@@ -1054,6 +1140,39 @@ window.retryVodUpload = async function(id) {
         }
     } catch(e) {
         alert('Error requesting retry: ' + e.message);
+    }
+};
+
+window.retrySolmates = async function(id, queueName = 'live_queue') {
+    if (!confirm("Do you want to re-try publishing this class to Solmates website?")) return;
+    try {
+        await update(ref(db, `${queueName}/${id}`), {
+            status: 'RETRY_REQUESTED',
+            solmates_error: null,
+            updatedAt: Date.now()
+        });
+        const token = localStorage.getItem('teams_gh_pat');
+        let dispatched = false;
+        if (token) {
+            try {
+                if (queueName === 'live_queue') {
+                    const launched = await triggerLiveBotDispatch(token, 1);
+                    if (launched > 0) dispatched = true;
+                } else {
+                    await triggerGitHubAction(token);
+                    dispatched = true;
+                }
+            } catch(e) {
+                console.error('Trigger dispatch error:', e);
+            }
+        }
+        if (dispatched) {
+            alert('✅ Solmates retry requested & Cloud Bot launched! Publishing to Solmates website now...');
+        } else {
+            alert('📝 Solmates retry requested in DB! Automated scheduler will pick this up, or click "Start Live Bot" / "Start Cloud Bot".');
+        }
+    } catch(e) {
+        alert('Error requesting Solmates retry: ' + e.message);
     }
 };
 

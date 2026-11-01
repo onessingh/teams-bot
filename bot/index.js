@@ -162,6 +162,81 @@ async function processItem(item) {
     return results;
   }
 
+  // 0. Fast-path: If YouTube video is already uploaded and Solmates upload is missing / requested to retry
+  if (item.youtube_url && (item.status === 'RETRY_REQUESTED' || !item.solmates_published)) {
+    console.log(`[Fast Path Solmates Retry] Class ${item.title} already uploaded to YouTube (${item.youtube_url}). Publishing to Solmates...`);
+    try {
+      const isHealthcare = item.course === 'healthcare' || 
+                           item.category === 'hc-recorded-class' || 
+                           /health|hospital/i.test(item.subject || '') ||
+                           /quantitative methods in healthcare|it in healthcare|innovations in healthcare/i.test(item.subject || '');
+      const solmatesCategory = isHealthcare ? 'hc-recorded-class' : 'recorded-class';
+
+      let solmatesClient = null;
+      const { SolmatesClient } = require('./solmates');
+      let adminId = process.env.SOLMATES_ADMIN_ID;
+      let password = process.env.SOLMATES_ADMIN_PASSWORD;
+
+      if (!adminId || !password) {
+        const cfgSnap = await db.ref('config/solmates').once('value');
+        const cfg = cfgSnap.val();
+        if (cfg && cfg.adminId && cfg.password) {
+          adminId = cfg.adminId;
+          password = cfg.password;
+        }
+      }
+
+      if (adminId && password) {
+        solmatesClient = new SolmatesClient(adminId, password);
+        await solmatesClient.login();
+        
+        let customTitle = null;
+        try {
+          const nextInfo = await solmatesClient.getNextClassInfo(item.semester || 1, item.subject || 'General', new Date(), solmatesCategory);
+          customTitle = nextInfo ? nextInfo.solmatesTitle : null;
+        } catch (_) {}
+
+        const publishRes = await solmatesClient.uploadLecture({
+          semester: item.semester || 1,
+          subject: item.subject || item.title,
+          youtubeUrl: item.youtube_url,
+          date: new Date(),
+          customTitle: customTitle,
+          category: solmatesCategory
+        });
+
+        await ref.update({
+          status: 'COMPLETED',
+          solmates_published: true,
+          solmates_title: publishRes.title,
+          solmates_item: publishRes.title || true,
+          solmates_error: null,
+          updatedAt: Date.now()
+        });
+        console.log(`🎉 [Fast Path] Successfully published to Solmates (${solmatesCategory}): "${publishRes.title}"`);
+        return;
+      } else {
+        await ref.update({
+          status: 'COMPLETED',
+          solmates_published: false,
+          solmates_error: 'Solmates credentials not configured in Firebase config/solmates or environment',
+          updatedAt: Date.now()
+        });
+        console.error('[Fast Path] Solmates credentials missing');
+        return;
+      }
+    } catch (solErr) {
+      console.error('[Fast Path] Solmates publish failed:', solErr.message);
+      await ref.update({
+        status: 'COMPLETED',
+        solmates_published: false,
+        solmates_error: solErr.message,
+        updatedAt: Date.now()
+      });
+      return;
+    }
+  }
+
   // 1. Check local disk for existing video backup from previous attempt
   const localBackups = findMp4Files(OUTPUT_DIR);
   if (localBackups.length > 0) {
@@ -378,15 +453,34 @@ async function processItem(item) {
           console.log(`[Solmates] Published:`, publishRes);
           await ref.update({
             solmates_published: true,
+            solmates_title: publishRes.title,
             solmates_item: publishRes.title || true,
+            solmates_error: null,
             updatedAt: Date.now()
           });
         } else {
           console.log('[Solmates] Credentials not configured, skipping solmates.in publish.');
+          await ref.update({
+            solmates_published: false,
+            solmates_error: 'Solmates credentials not configured in Firebase config/solmates or environment',
+            updatedAt: Date.now()
+          });
         }
       } catch (solErr) {
         console.error('[Solmates] Error publishing to solmates.in:', solErr.message);
+        await ref.update({
+          solmates_published: false,
+          solmates_error: solErr.message,
+          updatedAt: Date.now()
+        });
       }
+    } else if (youtubeUrl && (!item.semester || !item.subject)) {
+      console.log('[Solmates] Missing semester or subject. Skipping solmates publish.');
+      await ref.update({
+        solmates_published: false,
+        solmates_error: 'Semester or subject missing for Solmates',
+        updatedAt: Date.now()
+      });
     }
 
     // If recording was cut short (max duration), queue next part
