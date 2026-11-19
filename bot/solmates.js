@@ -286,7 +286,15 @@ function apiRequest(path, method = 'GET', body = null, token = null) {
     const headers = {
       'User-Agent': BROWSER_UA,
       'Origin': 'https://solmates.in',
-      'Referer': 'https://solmates.in/'
+      'Referer': 'https://solmates.in/',
+      'Accept': 'application/json, text/plain, */*',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"',
+      'sec-fetch-dest': 'empty',
+      'sec-fetch-mode': 'cors',
+      'sec-fetch-site': 'same-origin'
     };
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
@@ -310,7 +318,13 @@ function apiRequest(path, method = 'GET', body = null, token = null) {
         try {
           parsed = JSON.parse(data);
         } catch (e) {
-          parsed = { error: data, raw: data };
+          let cleanErr = data;
+          if (data && (data.includes('Just a moment...') || data.includes('challenge-platform') || data.includes('challenges.cloudflare.com') || data.includes('_cf_chl_opt'))) {
+            cleanErr = 'Cloudflare verification challenge / bot check triggered on solmates.in. Please retry or upload from browser.';
+          } else if (cleanErr && cleanErr.length > 200) {
+            cleanErr = cleanErr.slice(0, 200) + '...';
+          }
+          parsed = { error: cleanErr, raw: data, isCloudflare: true };
         }
         if (typeof parsed === 'object' && parsed !== null) {
           parsed.statusCode = res.statusCode;
@@ -340,15 +354,27 @@ class SolmatesClient {
     if (!this.adminId || !this.password) {
       throw new Error('Solmates Admin ID or Password not configured.');
     }
-    const res = await apiRequest('/auth/login', 'POST', {
-      adminId: this.adminId,
-      password: this.password
-    });
-    if (!res || !res.success || !res.token) {
-      throw new Error(`Solmates login failed: ${res ? res.error || JSON.stringify(res) : 'No response'}`);
+    let res = null;
+    let attempts = 0;
+    while (attempts < 3) {
+      attempts++;
+      res = await apiRequest('/auth/login', 'POST', {
+        adminId: this.adminId,
+        password: this.password
+      });
+      if (res && res.success && res.token) {
+        this.token = res.token;
+        return this.token;
+      }
+      if (res && res.isCloudflare && attempts < 3) {
+        console.warn(`[Solmates] Cloudflare challenge encountered during login (attempt ${attempts}/3). Retrying in 3s...`);
+        await new Promise(r => setTimeout(r, 3000));
+        continue;
+      }
+      break;
     }
-    this.token = res.token;
-    return this.token;
+    const errText = res ? (res.error || (typeof res === 'string' ? res : JSON.stringify(res))) : 'No response';
+    throw new Error(`Solmates login failed: ${errText}`);
   }
 
   /**

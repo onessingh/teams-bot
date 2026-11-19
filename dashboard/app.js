@@ -129,10 +129,16 @@ function getSolmatesStatus(item) {
     if (item.status === 'COMPLETED' || item.youtube_url) {
         const isFailed = item.solmates_published === false || !!item.solmates_error || (!item.solmates_published && item.status === 'COMPLETED');
         if (isFailed) {
+            let errorMsg = item.solmates_error || 'Not uploaded to Solmates website';
+            if (errorMsg.includes('<!DOCTYPE') || errorMsg.includes('<html') || errorMsg.includes('Just a moment...') || errorMsg.includes('challenge-platform') || errorMsg.includes('challenges.cloudflare.com')) {
+                errorMsg = 'Cloudflare verification challenge / bot check triggered on solmates.in. Click "🔄 Retry Solmates Upload" to re-try.';
+            } else if (errorMsg.length > 250) {
+                errorMsg = errorMsg.slice(0, 250) + '...';
+            }
             return {
                 isSuccess: false,
                 isFailed: true,
-                error: item.solmates_error || 'Not uploaded to Solmates website',
+                error: errorMsg,
                 title: null
             };
         }
