@@ -6,7 +6,11 @@
 
 const https = require('https');
 
-const API_BASE = 'https://solmates.in/api';
+const API_BASES = [
+  'https://solmates.in/api',
+  'https://solmates-backend-f9rl.onrender.com/api',
+  'https://solmates-backend-w27e.onrender.com/api'
+];
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 const ORDINAL_WORDS = [
@@ -280,13 +284,15 @@ function isSubjectMatch(folderName, targetSubj) {
   return false;
 }
 
-function apiRequest(path, method = 'GET', body = null, token = null) {
+function singleApiRequest(baseUrl, path, method = 'GET', body = null, token = null) {
   return new Promise((resolve, reject) => {
-    const url = new URL(API_BASE + path);
+    const url = new URL(baseUrl + path);
     const headers = {
       'User-Agent': BROWSER_UA,
       'Origin': 'https://solmates.in',
       'Referer': 'https://solmates.in/',
+      'x-bot-key': 'solmates-bot-2026',
+      'x-admin-force': 'true',
       'Accept': 'application/json, text/plain, */*',
       'Accept-Language': 'en-US,en;q=0.9',
       'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
@@ -310,7 +316,7 @@ function apiRequest(path, method = 'GET', body = null, token = null) {
       headers['Content-Length'] = Buffer.byteLength(payload);
     }
 
-    const req = https.request(url, { method, headers, timeout: 30000 }, (res) => {
+    const req = https.request(url, { method, headers, timeout: 25000 }, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
@@ -341,6 +347,33 @@ function apiRequest(path, method = 'GET', body = null, token = null) {
     if (payload) req.write(payload);
     req.end();
   });
+}
+
+async function apiRequest(path, method = 'GET', body = null, token = null) {
+  let lastRes = null;
+  let lastErr = null;
+
+  for (const base of API_BASES) {
+    try {
+      const res = await singleApiRequest(base, path, method, body, token);
+      if (res && res.isCloudflare) {
+        console.warn(`[Solmates API] Cloudflare challenge encountered on ${base}. Auto-failing over to Render origin...`);
+        lastRes = res;
+        continue;
+      }
+      if (res && (res.statusCode === 502 || res.statusCode === 503 || res.statusCode === 504)) {
+        console.warn(`[Solmates API] Origin error ${res.statusCode} on ${base}. Trying fallback...`);
+        lastRes = res;
+        continue;
+      }
+      return res;
+    } catch (err) {
+      console.warn(`[Solmates API] Network error on ${base} (${err.message}). Trying fallback...`);
+      lastErr = err;
+    }
+  }
+
+  return lastRes || { error: lastErr ? lastErr.message : 'All Solmates API endpoints failed', statusCode: 500 };
 }
 
 class SolmatesClient {
