@@ -1565,6 +1565,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
                        .replace(/\s+is\s+(?:on|off)\b/gi, ' ')
                        .replace(/,\s*(?:mic\s*(?:muted|unmuted)|camera\s*(?:on|off)|speaking|presented|video)/gi, ' ')
                        .replace(/\s*(?:is\s*presenting|has\s*started\s*sharing|is\s*sharing\s*screen|'s\s*screen)/gi, ' ')
+                       .replace(/(?:content\s*shared\s*by|screen\s*shared\s*by)\s*/gi, ' ')
                        .replace(/\s+/g, ' ')
                        .trim();
             const blacklist = /^(people|leave|chat|react|more|view|apps|settings|device|mic|camera|share|raise|hand|hang\s*up|mute|unmute|participants|in\s*this\s*meeting|attendees|toolbar|calling|stage|screen|recording|banner|gallery)$/i;
@@ -1583,17 +1584,19 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             }
           }
 
-          // Check aria-labels and leaf text nodes for "X is presenting" / "X is sharing screen"
-          const allElements = Array.from(document.querySelectorAll('[aria-label*="presenting" i], [aria-label*="sharing" i], [aria-label*="screen" i], span, p, h2, h3, div'));
+          // Check aria-labels and leaf text nodes for "X is presenting" / "X is sharing screen" / "Content shared by X"
+          const allElements = Array.from(document.querySelectorAll('[aria-label*="presenting" i], [aria-label*="sharing" i], [aria-label*="screen" i], [aria-label*="content shared by" i], span, p, h2, h3, div'));
           for (const el of allElements) {
             const aria = el.getAttribute('aria-label') || '';
             const leafText = el.children.length === 0 ? (el.textContent || '').trim() : '';
             const targetText = aria || leafText;
             if (!targetText) continue;
 
-            const m = targetText.match(/([A-Z][a-zA-Z\s.]+?)\s+(?:is presenting|has started sharing|is sharing screen|'s screen)/i);
-            if (m && m[1]) {
-              const name = cleanName(m[1]);
+            const m = targetText.match(/(?:content shared by|screen shared by)\s+([A-Z][a-zA-Z\s.]+)/i) ||
+                      targetText.match(/([A-Z][a-zA-Z\s.]+?)\s+(?:is presenting|has started sharing|is sharing screen|'s screen)/i);
+            const rawPresenter = m ? (m[1] || m[2]) : null;
+            if (rawPresenter) {
+              const name = cleanName(rawPresenter);
               if (name) {
                 signals[name] = (signals[name] || 0) + 6; // Screen share presenter = +6 pts
                 isSharing = true;
@@ -1776,8 +1779,8 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
 
             // Check active presentation or screen sharing
             const isPresenting = !!document.querySelector(
-              '[data-tid="presentation-stage"], [data-tid="screen-sharing-canvas"], [data-tid="screen-share"], [data-tid*="sharing"], [class*="screen-share"]'
-            );
+              '[data-tid="presentation-stage"], [data-tid="screen-sharing-canvas"], [data-tid="screen-share"], [data-tid*="sharing"], [class*="screen-share"], [aria-label*="content shared by" i]'
+            ) || text.includes("content shared by") || text.includes("is sharing screen") || text.includes("is presenting");
 
             // Check active video streaming (video element that is playing and has non-zero frame dimensions)
             const hasActiveVideo = Array.from(document.querySelectorAll('video')).some(v => v.videoWidth > 0 && !v.paused && v.readyState >= 2);
@@ -1793,10 +1796,13 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             maxParticipants = currentCount;
         }
 
+        const isPresentingOrVideo = isSharing || stats.isPresenting || stats.hasActiveVideo;
+
         // Lock / Update Teacher: User requested scoring window of at least 1:30 hours (90 mins)
         // because teachers sometimes join late (e.g. 1 hour late).
         // CRITICAL PROTECTION: DO NOT switch lockedTeacher if class is emptying out (attendance dropping)
-        const isAttendanceDropping = maxParticipants >= 6 && currentCount > 0 && currentCount <= Math.max(3, Math.floor(maxParticipants * 0.4));
+        // AND NEVER treat attendance as dropping if presentation or screen share is active (presentation collapses attendees in Teams)
+        const isAttendanceDropping = !isPresentingOrVideo && maxParticipants >= 6 && currentCount > 0 && currentCount <= Math.max(3, Math.floor(maxParticipants * 0.4));
 
         if (!isAttendanceDropping && (elapsedMins <= 90 || !lockedTeacher)) {
           let topTeacher = null;
@@ -1808,10 +1814,11 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             }
           }
 
-          if (topTeacher && maxScore >= 15) {
+          // Increased threshold from 15 to 35 (~3 mins) so temporary intro speakers/coordinators don't lock as teacher
+          if (topTeacher && maxScore >= 35) {
             const currentTeacherScore = lockedTeacher ? (teacherScores[lockedTeacher] || 0) : 0;
-            // Only switch locked teacher if none exists, or new topTeacher has at least 1.5x score and class is not emptying
-            const canSwitch = !lockedTeacher || (maxScore >= currentTeacherScore * 1.5);
+            // Switch teacher if none locked yet, or topTeacher has 1.5x score, or topTeacher leads by +20 points
+            const canSwitch = !lockedTeacher || (maxScore >= currentTeacherScore * 1.5) || (maxScore >= currentTeacherScore + 20);
             if (canSwitch && lockedTeacher !== topTeacher) {
               lockedTeacher = topTeacher;
               console.log(`🎓 Locked Teacher Identified: "${lockedTeacher}" (Cumulative Score: ${maxScore})`);
@@ -1853,7 +1860,7 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         }
 
         const hasActiveSpeech = someoneSpeaking || Object.values(signals).some(pts => pts >= 3);
-        const isPresentingOrVideo = isSharing || stats.isPresenting || stats.hasActiveVideo;
+        // isPresentingOrVideo declared above for isAttendanceDropping protection
         const isTeacherActive = !!(lockedTeacher && (
             signals[lockedTeacher] ||
             Object.keys(signals).some(k => k.toLowerCase().includes(lockedTeacher.toLowerCase()))
@@ -1889,12 +1896,12 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             // USER STRICT RULES:
             // 1. If genuine "Waiting for others to join" screen appeared after real class ran (peak >= 3 and elapsed >= 15m):
             //    Class is FINISHED! Leave promptly in 2 checks (30s) so bot exits immediately ("clas khatam hone me waiting aaye to turant left karna chahiye").
-            // 2. If teacher has been missing for >= 30s AND students also left (count === 1 with no media):
+            // 2. If teacher has been missing for >= 90s (6 checks) AND students also left (count === 1 with no media):
             //    Both teacher & students departed -> Leave promptly in 2 checks (30s).
             // 3. If waiting screen did NOT appear, but count is 1 with no teacher/speech:
             //    Require 8 checks (2 mins) unless teacher is confirmed gone.
             // 4. If class hasn't started yet (peak < 3), teacher might be late. Bot MUST WAIT patiently up to 30 mins.
-            const teacherGoneAndCountOne = hadRealClass && (teacherMissingCount >= 2 || !lockedTeacher) && currentCount === 1;
+            const teacherGoneAndCountOne = hadRealClass && (teacherMissingCount >= 6 || !lockedTeacher) && currentCount === 1;
             const fastExitAlone = stats.isWaitingForOthers || teacherGoneAndCountOne;
             const requiredAloneChecks = fastExitAlone ? (hadRealClass ? 2 : 8) : 8;
             const canExitAlone = hadRealClass || elapsedMins >= 30;
@@ -1914,15 +1921,16 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
             aloneCount = 0;
         }
 
-        // 4. Teacher Left + Students Dropping Rule (30s - 60s Exit after Teacher + Students Departure):
-        // If teacher is missing for >= 30s (>= 2 checks) AND students also drop to <= 2 (or <= 20% of peak):
+        // 4. Teacher Left + Students Dropping Rule:
+        // Teacher must be missing for at least 90s (>= 6 checks) AND students also drop to <= 2 (or <= 20% of peak):
         // Meaning teacher ended class and students are clearing out!
-        // If teacher is missing for >= 60s (>= 4 checks) and <= 2 attendees remain, exit even if a student mic is open.
-        const teacherGoneLonger = teacherMissingCount >= 4;
-        const teacherLeftAndStudentsDropped = hadRealClass && lockedTeacher && teacherMissingCount >= 2 && currentCount > 0 && (
+        // If teacher is missing for >= 90s (>= 6 checks) and <= 2 attendees remain, exit even if a student mic is open.
+        // NEVER exit if presentation/screen sharing is active.
+        const teacherGoneLonger = teacherMissingCount >= 6;
+        const teacherLeftAndStudentsDropped = hadRealClass && lockedTeacher && teacherMissingCount >= 6 && currentCount > 0 && (
             currentCount <= 2 ||
             (maxParticipants >= 8 && currentCount <= Math.max(2, Math.floor(maxParticipants * 0.2)))
-        ) && !stats.isPresenting && (!hasActiveSpeech || teacherGoneLonger);
+        ) && !isPresentingOrVideo && (!hasActiveSpeech || teacherGoneLonger);
 
         if (teacherLeftAndStudentsDropped) {
             teacherLeftDropCount++;
@@ -1936,15 +1944,15 @@ async function recordLiveClass(url, outputPath, cookies, options = {}) {
         }
 
         // 5. Almost empty meeting (<= 2 participants left when class ran for at least 25 minutes)
-        // STRICT: Only after 25 minutes, no screen presentation, and teacher is NOT active!
-        if (hadRealClass && currentCount > 0 && currentCount <= 2 && elapsedMins >= 25 && !stats.isPresenting && !isTeacherActive) {
+        // STRICT: Only after 25 minutes, no screen presentation or video, and teacher is NOT active!
+        if (hadRealClass && currentCount > 0 && currentCount <= 2 && elapsedMins >= 25 && !isPresentingOrVideo && !isTeacherActive) {
             smallMeetingDropCount++;
             console.log(`[DEBUG] Almost empty meeting: only ${currentCount} participants left (Peak: ${maxParticipants}) (${smallMeetingDropCount}/8 checks - 2 mins)...`);
             if (smallMeetingDropCount >= 8) {
                 console.log(`🎓 Meeting almost empty (only ${currentCount} participants left for >2 minutes after ${elapsedMins.toFixed(1)}m). Stopping recording.`);
                 meetingEnded = true;
             }
-        } else if (currentCount > 2 || stats.isPresenting || isTeacherActive) {
+        } else if (currentCount > 2 || isPresentingOrVideo || isTeacherActive) {
             smallMeetingDropCount = 0;
         }
 
